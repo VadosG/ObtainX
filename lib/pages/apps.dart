@@ -31,6 +31,7 @@ import 'package:obtainium/components/bulk_update_sheet.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
+import 'package:obtainium/components/empty_state_illustration.dart';
 import 'package:obtainium/components/rippling_wavy_progress/circular.dart';
 import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
 import 'package:obtainium/components/ui_widgets.dart' show ActionListTile;
@@ -40,6 +41,7 @@ import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
 import 'package:obtainium/pages/page_route_slide_up.dart';
 import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/pages/home.dart';
 import 'package:obtainium/pages/settings.dart';
 import 'package:obtainium/folders/app_folder.dart';
 import 'package:obtainium/providers/apps_provider.dart';
@@ -4168,10 +4170,11 @@ class AppsPageState extends State<AppsPage> {
     // [listedApps], so scoping to it would yield an empty set for those (which
     // made bulk actions no-op and made `apps.every(...)` checks vacuously true
     // — e.g. every folder pre-checked in the add-to-folder dialog).
-    final Set<App> selectedApps = {
+    Set<App> getSelectedApps() => {
       for (final id in selectedAppIds)
         if (appsProvider.apps[id] != null) appsProvider.apps[id]!.app,
     };
+    final Set<App> selectedApps = getSelectedApps();
 
     List<Widget> getLoadingWidgets() {
       if (appsProvider.loadingApps && appsProvider.apps.isEmpty) {
@@ -4189,15 +4192,61 @@ class AppsPageState extends State<AppsPage> {
       }
       final bool isMainAppsPage =
           !widget.onDemandOnlyList && widget.folderId == null;
-      final Widget emptyStateText = Text(
-        isMainAppsPage || appsProvider.apps.isEmpty
-            ? tr('noApps')
-            : widget.onDemandOnlyList && onDemandOnlyAppCount == 0
-            ? tr('onDemandOnlyEmpty')
-            : tr('noAppsForFilter'),
-        style: Theme.of(context).textTheme.headlineMedium,
-        textAlign: TextAlign.center,
+      final bool filterActive = !filter.isIdenticalTo(
+        neutralFilter,
+        settingsProvider,
       );
+      final Widget emptyStateContent;
+      if (filterActive && appsProvider.apps.isNotEmpty) {
+        // A filter / search matched nothing — anywhere it's applied (main
+        // page, a folder, or the on-demand list). Offer an escape hatch.
+        emptyStateContent = AppEmptyState(
+          illustration: const AppFilterEmptyIllustration(),
+          title: tr('noAppsForFilter'),
+          subtitle: tr('noAppsForFilterSubtitle'),
+          action: FilledButton.tonalIcon(
+            onPressed: () => setState(() {
+              filter = AppsFilter();
+              _searchController.clear();
+            }),
+            icon: const Icon(Icons.filter_alt_off_rounded),
+            label: Text(tr('clearFilters')),
+          ),
+        );
+      } else if (widget.onDemandOnlyList && onDemandOnlyAppCount == 0) {
+        emptyStateContent = AppEmptyState(
+          illustration: const AppArchiveEmptyIllustration(),
+          title: tr('onDemandOnlyEmptyTitle'),
+          subtitle: tr('onDemandOnlyEmpty'),
+        );
+      } else {
+        // Pristine library, or an emptied folder (no active filter): nudge the
+        // user toward adding an app. Folders use this same state — not the
+        // "clear filters" one — when they simply have no apps.
+        emptyStateContent = AppEmptyState(
+          illustration: const AppLibraryEmptyIllustration(),
+          title: tr('noApps'),
+          subtitle: tr('noAppsSubtitle'),
+          action: FilledButton.icon(
+            onPressed: () async {
+              // A folder list is a route pushed on top of the shell (HomePage
+              // is a sibling route under the root navigator, not an ancestor),
+              // so reach the shell via its global key rather than
+              // findAncestorState — which returns null from a pushed route.
+              // Pop the folder first so the tab switch isn't hidden behind it.
+              if (widget.folderId != null) {
+                await Navigator.of(context).maybePop();
+              }
+              final HomePageState? home = homePageKey.currentState;
+              if (home != null) {
+                unawaited(home.switchToPage(1));
+              }
+            },
+            icon: const Icon(Icons.add_rounded),
+            label: Text(tr('addApp')),
+          ),
+        );
+      }
       return [
         // Don't show the empty-state message when the only matches live in
         // folders — the "Found in your folders" section below carries them.
@@ -4205,30 +4254,62 @@ class AppsPageState extends State<AppsPage> {
           isMainAppsPage
               ? SliverLayoutBuilder(
                   builder: (context, constraints) {
-                    // Account for the app bar so the message itself lands at
-                    // the viewport center without reserving the lower half.
-                    final double spaceBeforeViewportCenter = math.max(
+                    // Centre the empty state in the space *above* the
+                    // bottom-pinned "Manage folders" footer (a trailing
+                    // SliverFillRemaining) + the nav pill. Reserving that room
+                    // here keeps the taller illustration from shoving the
+                    // footer down behind the pill.
+                    final double available =
+                        constraints.viewportMainAxisExtent -
+                        constraints.precedingScrollExtent;
+                    // Reserve room for whatever the bottom footer will actually
+                    // render (Manage folders + one button per folder + the
+                    // On-Demand entry, each shown conditionally) plus the nav
+                    // pill, so centring the illustration never pushes those
+                    // buttons behind the pill. Scales with folder count and the
+                    // user's font size.
+                    final double btn =
+                        48 * MediaQuery.textScalerOf(context).scale(1.0);
+                    final bool showManage =
+                        appsProvider.apps.isNotEmpty || appFolders.isNotEmpty;
+                    double footer = 0;
+                    if (showManage) footer += btn;
+                    if (appFolders.isNotEmpty) {
+                      footer += 8 + appFolders.length * (btn + 8);
+                    }
+                    if (onDemandOnlyAppCount > 0) footer += btn + 8;
+                    if (footer > 0) footer += 20; // footer's own top padding
+                    final double navClear = isLargeScreen ? 52.0 : 80.0;
+                    final double footerReserve =
+                        MediaQuery.paddingOf(context).bottom +
+                        navClear +
+                        footer;
+                    final double boxHeight = math.max(
                       0.0,
-                      constraints.viewportMainAxisExtent / 2 -
-                          constraints.precedingScrollExtent,
+                      available - footerReserve,
                     );
                     return SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          spaceBeforeViewportCenter,
-                          16,
-                          0,
-                        ),
-                        child: FractionalTranslation(
-                          translation: const Offset(0, -0.5),
-                          child: emptyStateText,
-                        ),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: boxHeight),
+                        child: Center(child: emptyStateContent),
                       ),
                     );
                   },
                 )
-              : SliverFillRemaining(child: Center(child: emptyStateText)),
+              : SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Padding(
+                    // Exclude the floating nav pill from the centring region so
+                    // the whole block sits at the visible optical centre, not
+                    // biased low toward the screen edge.
+                    padding: EdgeInsets.only(
+                      bottom:
+                          MediaQuery.paddingOf(context).bottom +
+                          (isLargeScreen ? 52.0 : 80.0),
+                    ),
+                    child: Center(child: emptyStateContent),
+                  ),
+                ),
         // Initial empty-library loading uses the centered M3E indicator above.
         // Keep this compact bar for explicit user-initiated refreshes only.
         if (refreshingSince != null)
@@ -4708,10 +4789,12 @@ class AppsPageState extends State<AppsPage> {
             };
     }
 
-    Future<Null> Function() launchCategorizeDialog() {
+    Future<Null> Function() launchCategorizeDialog([
+      Iterable<App>? targetApps,
+    ]) {
       return () async {
         try {
-          final appsToCategorize = selectedApps.toList();
+          final appsToCategorize = (targetApps ?? getSelectedApps()).toList();
           await showAppModalSheet<void>(
             context: context,
             builder: (BuildContext sheetContext) {
@@ -4754,7 +4837,8 @@ class AppsPageState extends State<AppsPage> {
       };
     }
 
-    Future<dynamic> showMassMarkDialog() {
+    Future<dynamic> showMassMarkDialog([Iterable<App>? targetApps]) {
+      final appsToMark = (targetApps ?? getSelectedApps()).toList();
       return showDialog(
         context: context,
         builder: (BuildContext ctx) {
@@ -4762,7 +4846,7 @@ class AppsPageState extends State<AppsPage> {
             title: Text(
               tr(
                 'markXSelectedAppsAsUpdated',
-                args: [selectedAppIds.length.toString()],
+                args: [appsToMark.length.toString()],
               ),
             ),
             contentPadding: appDialogContentPadding,
@@ -4784,7 +4868,7 @@ class AppsPageState extends State<AppsPage> {
                 onPressed: () {
                   hapticSelection();
                   appsProvider.saveApps(
-                    selectedApps.map((a) {
+                    appsToMark.map((a) {
                       if (a.installedVersion != null &&
                           !appsProvider.isVersionDetectionPossible(
                             appsProvider.apps[a.id],
@@ -4807,10 +4891,11 @@ class AppsPageState extends State<AppsPage> {
       );
     }
 
-    void pinSelectedApps() {
-      final pinStatus = selectedApps.where((element) => element.pinned).isEmpty;
+    void pinSelectedApps([Iterable<App>? targetApps]) {
+      final appsToPin = targetApps ?? getSelectedApps();
+      final pinStatus = appsToPin.where((element) => element.pinned).isEmpty;
       appsProvider.saveApps(
-        selectedApps.map((e) => e.copyWith(pinned: pinStatus)).toList(),
+        appsToPin.map((e) => e.copyWith(pinned: pinStatus)).toList(),
         updateInstalledInfo: false,
       );
     }
@@ -4818,29 +4903,34 @@ class AppsPageState extends State<AppsPage> {
     // Shared bulk-action bodies, used by both the phone "more options" sheet
     // and the large-screen action pane. They intentionally do not dismiss any
     // surface - the phone sheet pops at its own call sites; the pane stays.
-    void downloadSelectedAppAssets() {
+    void downloadSelectedAppAssets([Iterable<App>? targetApps]) {
+      final appsToDownload = targetApps ?? getSelectedApps();
       appsProvider
-          .downloadAppAssets(selectedApps.map((e) => e.id).toList())
+          .downloadAppAssets(appsToDownload.map((e) => e.id).toList())
           .catchError((e) {
             showError(e);
             return <String>[];
           });
     }
 
-    void shareSelectedAppUrls() {
+    void shareSelectedAppUrls([Iterable<App>? targetApps]) {
+      final appsToShare = targetApps ?? getSelectedApps();
       String urls = '';
-      for (var a in selectedApps) {
+      for (var a in appsToShare) {
         urls += '${a.url}\n';
       }
-      urls = urls.substring(0, urls.length - 1);
+      if (urls.isNotEmpty) {
+        urls = urls.substring(0, urls.length - 1);
+      }
       SharePlus.instance.share(
         ShareParams(text: urls, subject: 'ObtainX - ${tr('appsString')}'),
       );
     }
 
-    void shareSelectedAppConfigLinks() {
+    void shareSelectedAppConfigLinks([Iterable<App>? targetApps]) {
+      final appsToShare = targetApps ?? getSelectedApps();
       String urls = '';
-      for (var a in selectedApps) {
+      for (var a in appsToShare) {
         urls +=
             'https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/${Uri.encodeComponent(jsonEncode({'id': a.id, 'url': a.url, 'author': a.author, 'name': a.name, 'preferredApkIndex': a.preferredApkIndex, 'additionalSettings': jsonEncode(a.additionalSettings), 'overrideSource': a.overrideSource}))}\n\n';
       }
@@ -4849,16 +4939,17 @@ class AppsPageState extends State<AppsPage> {
       );
     }
 
-    void exportSelectedApps() {
+    void exportSelectedApps([Iterable<App>? targetApps]) {
+      final appsToExport = (targetApps ?? getSelectedApps()).toList();
       const encoder = JsonEncoder.withIndent('    ');
       final exportJSON = encoder.convert(
         appsProvider.generateExportJSON(
-          appIds: selectedApps.map((e) => e.id).toList(),
+          appIds: appsToExport.map((e) => e.id).toList(),
           overrideExportSettings: 0,
         ),
       );
       final String fn =
-          '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}-count-${selectedApps.length}';
+          '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}-count-${appsToExport.length}';
       final XFile f = XFile.fromData(
         Uint8List.fromList(utf8.encode(exportJSON)),
         mimeType: 'application/json',
@@ -4871,15 +4962,17 @@ class AppsPageState extends State<AppsPage> {
 
     void showCombinedSelectionActionsSheet() {
       final ColorScheme scheme = Theme.of(context).colorScheme;
-      final bool selectedAppsArePinned = selectedApps.any(
-        (selectedApp) => selectedApp.pinned,
-      );
 
       showAppModalSheet<void>(
         context: context,
         builder: (sheetCtx) {
           return StatefulBuilder(
             builder: (sheetCtx, setSheetState) {
+              final Set<App> currentSelectedApps = getSelectedApps();
+              final bool selectedAppsArePinned = currentSelectedApps.any(
+                (selectedApp) => selectedApp.pinned,
+              );
+
               return AppSheetContent(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 children: [
@@ -4945,14 +5038,15 @@ class AppsPageState extends State<AppsPage> {
                   ActionListTile(
                     icon: Icons.category_outlined,
                     label: tr('categorize'),
-                    onTap: launchCategorizeDialog(),
+                    onTap: launchCategorizeDialog(currentSelectedApps),
                     autoPop: true,
                   ),
                   // Add to Folder
                   ActionListTile(
                     icon: Icons.folder_copy_outlined,
                     label: tr('addToFolder'),
-                    onTap: () => _showFolderAssignDialog(context, selectedApps),
+                    onTap: () =>
+                        _showFolderAssignDialog(context, currentSelectedApps),
                     autoPop: true,
                   ),
                   // Pin / Unpin
@@ -4963,14 +5057,14 @@ class AppsPageState extends State<AppsPage> {
                     label: selectedAppsArePinned
                         ? tr('unpinFromTop')
                         : tr('pinToTop'),
-                    onTap: pinSelectedApps,
+                    onTap: () => pinSelectedApps(currentSelectedApps),
                     autoPop: true,
                   ),
                   // Share URLs
                   ActionListTile(
                     icon: Icons.share_outlined,
                     label: tr('shareSelectedAppURLs'),
-                    onTap: shareSelectedAppUrls,
+                    onTap: () => shareSelectedAppUrls(currentSelectedApps),
                     autoPop: true,
                   ),
                   // Share Config Links
@@ -4979,14 +5073,17 @@ class AppsPageState extends State<AppsPage> {
                     label: tr('shareAppConfigLinks'),
                     onTap: selectedAppIds.isEmpty
                         ? null
-                        : shareSelectedAppConfigLinks,
+                        : () =>
+                              shareSelectedAppConfigLinks(currentSelectedApps),
                     autoPop: true,
                   ),
                   // Export JSON
                   ActionListTile(
                     icon: Icons.file_download_outlined,
                     label: '${tr('share')} - ${tr('obtainiumExport')}',
-                    onTap: selectedAppIds.isEmpty ? null : exportSelectedApps,
+                    onTap: selectedAppIds.isEmpty
+                        ? null
+                        : () => exportSelectedApps(currentSelectedApps),
                     autoPop: true,
                   ),
                   // Download Release Assets
@@ -4996,7 +5093,7 @@ class AppsPageState extends State<AppsPage> {
                       'downloadX',
                       args: [lowerCaseIfEnglish(tr('releaseAsset'))],
                     ),
-                    onTap: downloadSelectedAppAssets,
+                    onTap: () => downloadSelectedAppAssets(currentSelectedApps),
                     autoPop: true,
                   ),
                   // Mark as Updated
@@ -5005,7 +5102,7 @@ class AppsPageState extends State<AppsPage> {
                     label: tr('markSelectedAppsUpdated'),
                     onTap: appsProvider.areDownloadsRunning()
                         ? null
-                        : showMassMarkDialog,
+                        : () => showMassMarkDialog(currentSelectedApps),
                     autoPop: true,
                   ),
                   const Divider(height: 16),
@@ -5021,7 +5118,7 @@ class AppsPageState extends State<AppsPage> {
                       final RemoveAppsWithModalResult removeResult =
                           await appsProviderRef.removeAppsWithModal(
                             context,
-                            selectedApps.toList(),
+                            currentSelectedApps.toList(),
                           );
                       if (removeResult.shouldShowSnackBar) {
                         final Set<String> undoAppIds =
@@ -5029,7 +5126,7 @@ class AppsPageState extends State<AppsPage> {
                         final int removedCount =
                             removeResult.deferredUndoAppIds.isNotEmpty
                             ? removeResult.deferredUndoAppIds.length
-                            : selectedApps.length;
+                            : currentSelectedApps.length;
                         messenger
                           ?..clearSnackBars()
                           ..showSnackBar(
@@ -5741,148 +5838,171 @@ class AppsPageState extends State<AppsPage> {
                             ...getLoadingWidgets(),
                             ...getDisplayedList(),
                             ...getCrossFolderMatchesSlivers(),
-                            // Extra bottom space for folder / on-demand pages so the
-                            // last item isn't clipped by the phone's rounded corners.
-                            if (widget.onDemandOnlyList ||
-                                widget.folderId != null)
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 80),
-                              ),
                             if (!widget.onDemandOnlyList &&
                                 widget.folderId == null)
-                              SliverToBoxAdapter(
+                              SliverFillRemaining(
+                                hasScrollBody: false,
                                 child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    20,
-                                    16,
-                                    0,
+                                  padding: EdgeInsets.only(
+                                    bottom:
+                                        MediaQuery.paddingOf(context).bottom +
+                                        (!isLargeScreen
+                                            ? 80.0
+                                            : ((showSplitPaneListFabs ||
+                                                      showFolderListFabs)
+                                                  ? 52.0
+                                                  : 0.0)),
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      // Manage Folders button
-                                      TextButton.icon(
-                                        onPressed: () {
-                                          unawaited(
-                                            _showFolderManageSheet(context),
-                                          );
-                                        },
-                                        icon: const Icon(
-                                          Icons.folder_copy_outlined,
-                                          size: 18,
-                                        ),
-                                        label: Text(tr('manageFolders')),
+                                  child: Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        20,
+                                        16,
+                                        0,
                                       ),
-                                      // User-defined folder buttons
-                                      if (appFolders.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        ...appFolders.map(
-                                          (folder) => Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 8,
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          // Manage Folders button — hidden on the
+                                          // empty first-run page; nothing to
+                                          // organize into folders yet.
+                                          if (appsProvider.apps.isNotEmpty ||
+                                              appFolders.isNotEmpty)
+                                            TextButton.icon(
+                                              onPressed: () {
+                                                unawaited(
+                                                  _showFolderManageSheet(
+                                                    context,
+                                                  ),
+                                                );
+                                              },
+                                              icon: const Icon(
+                                                Icons.folder_copy_outlined,
+                                                size: 18,
+                                              ),
+                                              label: Text(tr('manageFolders')),
                                             ),
-                                            child: FilledButton.icon(
+                                          // User-defined folder buttons
+                                          if (appFolders.isNotEmpty) ...[
+                                            const SizedBox(height: 8),
+                                            ...appFolders.map(
+                                              (folder) => Padding(
+                                                padding: const EdgeInsets.only(
+                                                  bottom: 8,
+                                                ),
+                                                child: FilledButton.icon(
+                                                  onPressed: () {
+                                                    Navigator.push(
+                                                      context,
+                                                      slideUpPageRoute(
+                                                        (_) => AppsPage(
+                                                          folderId: folder.id,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  },
+                                                  icon: () {
+                                                    final int upd =
+                                                        folderUpdateCounts[folder
+                                                            .id] ??
+                                                        0;
+                                                    if (upd > 0) {
+                                                      return Stack(
+                                                        clipBehavior: Clip.none,
+                                                        alignment:
+                                                            AlignmentDirectional
+                                                                .centerStart,
+                                                        children: [
+                                                          const Row(
+                                                            mainAxisSize:
+                                                                MainAxisSize
+                                                                    .min,
+                                                            children: [
+                                                              SizedBox(
+                                                                width: 4,
+                                                                height: 16,
+                                                              ),
+                                                              SizedBox(
+                                                                width: 6,
+                                                              ),
+                                                              Icon(
+                                                                Icons
+                                                                    .folder_outlined,
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          Badge(
+                                                            label: Text('$upd'),
+                                                            child:
+                                                                const SizedBox(
+                                                                  width: 4,
+                                                                  height: 16,
+                                                                ),
+                                                          ),
+                                                        ],
+                                                      );
+                                                    }
+                                                    return const Icon(
+                                                      Icons.folder_outlined,
+                                                    );
+                                                  }(),
+                                                  label: Text(
+                                                    '${folder.name} '
+                                                    '(${folderAppCounts[folder.id] ?? 0})',
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                          ],
+                                          // On-Demand Only button (always last) —
+                                          // only when it actually holds apps.
+                                          if (onDemandOnlyAppCount > 0)
+                                            FilledButton.icon(
                                               onPressed: () {
                                                 Navigator.push(
                                                   context,
                                                   slideUpPageRoute(
-                                                    (_) => AppsPage(
-                                                      folderId: folder.id,
+                                                    (_) => const AppsPage(
+                                                      onDemandOnlyList: true,
                                                     ),
                                                   ),
                                                 );
                                               },
-                                              icon: () {
-                                                final int upd =
-                                                    folderUpdateCounts[folder
-                                                        .id] ??
-                                                    0;
-                                                if (upd > 0) {
-                                                  return Stack(
-                                                    clipBehavior: Clip.none,
-                                                    alignment:
-                                                        AlignmentDirectional
-                                                            .centerStart,
-                                                    children: [
-                                                      const Row(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          SizedBox(
-                                                            width: 4,
-                                                            height: 16,
-                                                          ),
-                                                          SizedBox(width: 6),
-                                                          Icon(
-                                                            Icons
-                                                                .folder_outlined,
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      Badge(
-                                                        label: Text('$upd'),
-                                                        child: const SizedBox(
-                                                          width: 4,
-                                                          height: 16,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  );
-                                                }
-                                                return const Icon(
-                                                  Icons.folder_outlined,
-                                                );
-                                              }(),
+                                              icon: const Icon(
+                                                Icons.folder_special_outlined,
+                                              ),
                                               label: Text(
-                                                '${folder.name} '
-                                                '(${folderAppCounts[folder.id] ?? 0})',
+                                                '${tr('onDemandOnly')} '
+                                                '($onDemandOnlyAppCount)',
                                                 textAlign: TextAlign.center,
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ],
-                                      // On-Demand Only button (always last)
-                                      FilledButton.icon(
-                                        onPressed: () {
-                                          Navigator.push(
-                                            context,
-                                            slideUpPageRoute(
-                                              (_) => const AppsPage(
-                                                onDemandOnlyList: true,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                        icon: const Icon(
-                                          Icons.folder_special_outlined,
-                                        ),
-                                        label: Text(
-                                          '${tr('onDemandOnly')} '
-                                          '($onDemandOnlyAppCount)',
-                                          textAlign: TextAlign.center,
-                                        ),
+                                        ],
                                       ),
-                                      const SizedBox(height: 20),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            SliverToBoxAdapter(
-                              child: SizedBox(
-                                height:
-                                    MediaQuery.paddingOf(context).bottom +
-                                    (!isLargeScreen
-                                        ? 80.0
-                                        : ((showSplitPaneListFabs ||
-                                                  showFolderListFabs)
-                                              ? 52.0
-                                              : 0.0)),
+                            if (widget.onDemandOnlyList ||
+                                widget.folderId != null)
+                              SliverToBoxAdapter(
+                                child: SizedBox(
+                                  height:
+                                      MediaQuery.paddingOf(context).bottom +
+                                      (!isLargeScreen
+                                          ? 80.0
+                                          : ((showSplitPaneListFabs ||
+                                                    showFolderListFabs)
+                                                ? 52.0
+                                                : 0.0)),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                         if (!isLargeScreen &&
