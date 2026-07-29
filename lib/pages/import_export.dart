@@ -5,6 +5,7 @@ import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/backup_import_sheet.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
@@ -73,9 +74,13 @@ class _ImportExportPageState extends State<ImportExportPage> {
         s.saveDownloadedApkCopies,
         s.exportSettings,
         s.autoExportOnChanges,
+        s.alwaysUsePhoneLayout,
       ),
     );
     final settingsProvider = context.read<SettingsProvider>();
+    final bool isLargeScreen =
+        MediaQuery.sizeOf(context).width >= kLargeScreenWidthBreakpoint &&
+        !settingsProvider.alwaysUsePhoneLayout;
 
     final outlineButtonStyle = ButtonStyle(
       foregroundColor: WidgetStateProperty.all(
@@ -349,7 +354,8 @@ class _ImportExportPageState extends State<ImportExportPage> {
                   16,
                   8,
                   16,
-                  8 + MediaQuery.paddingOf(context).bottom,
+                  MediaQuery.paddingOf(context).bottom +
+                      (isLargeScreen ? 24.0 : 88.0),
                 ),
                 sliver: SliverToBoxAdapter(
                   child: Column(

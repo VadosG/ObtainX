@@ -5,7 +5,7 @@ import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show Listenable, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -819,6 +819,14 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
     ThemeData pageThemeForDialogs,
   ) {
     if (!_editMode || appData == null) return null;
+    final ColorScheme colorScheme = Theme.of(themeContext).colorScheme;
+    final Color disabledSaveFabColor =
+        Color.lerp(
+          colorScheme.surfaceContainerHighest,
+          colorScheme.onSurface,
+          Theme.of(themeContext).brightness == Brightness.dark ? 0.18 : 0.08,
+        ) ??
+        colorScheme.surfaceContainerHighest;
     return _MeasureSize(
       onChange: _handleEditModeFloatingActionButtonsSizeChanged,
       child: Column(
@@ -838,13 +846,33 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
             child: const Icon(Icons.close),
           ),
           const SizedBox(height: 12),
-          FloatingActionButton(
-            heroTag: 'app_page_edit_save',
-            tooltip: widget.isEmbedded ? null : tr('save'),
-            onPressed: appData.downloadProgress != null || updating
-                ? null
-                : () => _saveEdit(appData, appsProvider),
-            child: const Icon(Icons.check),
+          ListenableBuilder(
+            listenable: Listenable.merge([
+              _nameController,
+              _authorController,
+              _urlController,
+              _packageController,
+              _notesController,
+            ]),
+            builder: (BuildContext context, Widget? child) {
+              final bool canSave =
+                  appData.downloadProgress == null &&
+                  !updating &&
+                  _isEditDirty(appData);
+              return FloatingActionButton(
+                heroTag: 'app_page_edit_save',
+                tooltip: widget.isEmbedded ? null : tr('save'),
+                backgroundColor: canSave ? null : disabledSaveFabColor,
+                foregroundColor: canSave
+                    ? null
+                    : colorScheme.onSurface.withValues(alpha: 0.48),
+                elevation: canSave ? null : 0,
+                onPressed: canSave
+                    ? () => _saveEdit(appData, appsProvider)
+                    : null,
+                child: const Icon(Icons.check),
+              );
+            },
           ),
         ],
       ),
@@ -4769,6 +4797,8 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
               ),
               floatingActionButtonLocation:
                   FloatingActionButtonLocation.endFloat,
+              floatingActionButtonAnimator:
+                  FloatingActionButtonAnimator.noAnimation,
               body: Stack(
                 fit: StackFit.expand,
                 children: [

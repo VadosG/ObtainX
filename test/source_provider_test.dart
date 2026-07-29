@@ -7,6 +7,7 @@ import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:http/http.dart';
@@ -1051,4 +1052,55 @@ void main() {
 
     expect(app.finalName, 'Readable Name');
   });
+
+  test(
+    'GitLab getLatestAPKDetails extracts changelog from release description',
+    () async {
+      final gitlab = _StubGitLab(
+        jsonEncode([
+          {
+            'tag_name': '4.8.3',
+            'name': 'Aurora Store 4.8.3',
+            'description': '## Release 4.8.3\n- Fixed changelog issue',
+            'released_at': '2026-07-27T00:00:00Z',
+            'assets': {
+              'links': [
+                {
+                  'name': 'app.apk',
+                  'url':
+                      'https://gitlab.com/AuroraOSS/AuroraStore/-/releases/4.8.3/downloads/app.apk',
+                },
+              ],
+            },
+          },
+        ]),
+      );
+
+      final details = await gitlab.getLatestAPKDetails(
+        'https://gitlab.com/AuroraOSS/AuroraStore',
+        const <String, dynamic>{},
+      );
+
+      expect(details.changeLog, '## Release 4.8.3\n- Fixed changelog issue');
+    },
+  );
+}
+
+class _StubGitLab extends GitLab {
+  _StubGitLab(this.responseJson);
+  final String responseJson;
+
+  @override
+  Future<Response> sourceRequest(
+    String url,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    if (url.contains('/api/v4/projects/')) {
+      if (!url.contains('/releases') && !url.contains('/tags')) {
+        return Response(jsonEncode(<String, dynamic>{'id': 12345}), 200);
+      }
+      return Response(responseJson, 200);
+    }
+    return Response('', 404);
+  }
 }

@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
+import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/bulk_category_editor.dart';
@@ -1747,6 +1748,39 @@ String? _rawFileUrlFromRepositoryPageUrl(String url) {
   }
   return null;
 }
+String? _gitlabReleaseApiUrlFromUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return null;
+  final path = uri.path;
+  if (path.contains('/api/v4/projects/')) {
+    return url;
+  }
+  final segments = uri.pathSegments;
+  final dashIndex = segments.indexOf('-');
+  if (dashIndex > 0 &&
+      segments.length > dashIndex + 1 &&
+      segments[dashIndex + 1] == 'releases') {
+    final projectPathEncoded = segments
+        .sublist(0, dashIndex)
+        .map(Uri.encodeComponent)
+        .join('%2F');
+    final String apiBasePath =
+        '/api/v4/projects/$projectPathEncoded/releases';
+    if (segments.length > dashIndex + 2) {
+      final tagName = segments.sublist(dashIndex + 2).join('/');
+      return uri
+          .replace(
+            path: '$apiBasePath/${Uri.encodeComponent(tagName)}',
+            queryParameters: null,
+          )
+          .toString();
+    }
+    return uri
+        .replace(path: apiBasePath, queryParameters: null)
+        .toString();
+  }
+  return null;
+}
 
 Future<String?> _loadLinkedChangeLog(
   AppSource appSource,
@@ -1754,8 +1788,22 @@ Future<String?> _loadLinkedChangeLog(
   String changesUrl,
 ) async {
   final githubReleaseApiUrl = _githubReleaseApiUrlFromUrl(changesUrl);
+  var gitlabReleaseApiUrl = _gitlabReleaseApiUrlFromUrl(changesUrl);
+
+  if (gitlabReleaseApiUrl != null && appSource is GitLab) {
+    final String? pat = await appSource.getPATIfAny(app.additionalSettings);
+    if (pat != null && pat.isNotEmpty) {
+      final uri = Uri.parse(gitlabReleaseApiUrl);
+      final newQueryParams = Map<String, String>.from(uri.queryParameters);
+      newQueryParams['private_token'] = pat;
+      gitlabReleaseApiUrl =
+          uri.replace(queryParameters: newQueryParams).toString();
+    }
+  }
+
   final requestUrl =
       githubReleaseApiUrl ??
+      gitlabReleaseApiUrl ??
       _rawFileUrlFromRepositoryPageUrl(changesUrl) ??
       changesUrl;
   final response = await appSource.sourceRequest(
@@ -1769,6 +1817,21 @@ Future<String?> _loadLinkedChangeLog(
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) {
       return (decoded['body'] ?? '').toString();
+    }
+  }
+  if (gitlabReleaseApiUrl != null) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List && decoded.isNotEmpty) {
+        final first = decoded.first;
+        if (first is Map<String, dynamic>) {
+          return (first['description'] ?? first['message'] ?? '').toString();
+        }
+      } else if (decoded is Map<String, dynamic>) {
+        return (decoded['description'] ?? decoded['message'] ?? '').toString();
+      }
+    } catch (_) {
+      return null;
     }
   }
   if (appSource is APKMirror) {
