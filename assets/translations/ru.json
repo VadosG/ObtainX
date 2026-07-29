@@ -243,7 +243,7 @@
     "appsPossiblyUpdated": "Попытки обновления приложений",
     "appsPossiblyUpdatedNotifDescription": "Уведомление о возможных обновлениях одного или нескольких приложений в фоновом режиме",
     "xWasPossiblyUpdatedToY": "{} возможно был обновлён до {}",
-    "enableBackgroundUpdates": "Выполнять обновления в фоне",
+    "enableBackgroundUpdates": "Фоновая установка обновлений",
     "backgroundUpdateReqsExplanation": "Фоновые обновления могут быть возможны не для всех приложений",
     "backgroundUpdateLimitsExplanation": "Успешность фоновой установки можно определить только после открытия ObtainX",
     "verifyLatestTag": "Проверять метку «latest»",

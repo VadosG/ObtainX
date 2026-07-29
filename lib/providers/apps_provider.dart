@@ -1442,15 +1442,9 @@ Future<void> bgUpdateCheck(
     return;
   }
 
-  if (!appsProvider.settingsProvider.enableBackgroundUpdates ||
-      appsProvider.settingsProvider.updateInterval == 0) {
+  if (appsProvider.settingsProvider.updateInterval == 0) {
     if (!forceAll) {
-      unawaited(
-        bgLogs.add(
-          'BG update task: Skipped (enabled=${appsProvider.settingsProvider.enableBackgroundUpdates}, '
-          'interval=${appsProvider.settingsProvider.updateInterval})',
-        ),
-      );
+      unawaited(bgLogs.add('BG update task: Skipped (interval=0)'));
       return;
     }
     unawaited(

@@ -263,7 +263,7 @@
     "appsPossiblyUpdated": "アプリのアップデートを試行",
     "appsPossiblyUpdatedNotifDescription": "1つまたは複数のアプリのアップデートがバックグラウンドで適用された可能性があることをユーザーに通知する",
     "xWasPossiblyUpdatedToY": "{} が {} にアップデートされた可能性があります。",
-    "enableBackgroundUpdates": "バックグラウンドアップデートを有効化する",
+    "enableBackgroundUpdates": "バックグラウンドでのアップデートのインストール",
     "backgroundUpdateReqsExplanation": "バックグラウンドアップデートは、すべてのアプリで利用できるとは限りません。",
     "backgroundUpdateLimitsExplanation": "バックグラウンドアップデートが成功したかどうかは、ObtainXを起動したときにしか判断できません。",
     "verifyLatestTag": "'latest'タグを確認する",

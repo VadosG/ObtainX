@@ -1092,6 +1092,7 @@ class _UpdatesSection extends StatelessWidget {
       rows
         ..add(
           ListTile(
+            key: const ValueKey<String>('foreground_service_update_checking'),
             title: Text(tr('foregroundServiceForUpdateChecking')),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1111,6 +1112,7 @@ class _UpdatesSection extends StatelessWidget {
         )
         ..add(
           ListTile(
+            key: const ValueKey<String>('background_update_installation'),
             title: Text(tr('enableBackgroundUpdates')),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1134,6 +1136,7 @@ class _UpdatesSection extends StatelessWidget {
         rows
           ..add(
             SwitchListTile(
+              key: const ValueKey<String>('background_install_wifi_only'),
               title: Text(tr('bgUpdatesOnWiFiOnly')),
               value: sp.bgUpdatesOnWiFiOnly,
               onChanged: (bool value) => sp.bgUpdatesOnWiFiOnly = value,
@@ -1141,6 +1144,7 @@ class _UpdatesSection extends StatelessWidget {
           )
           ..add(
             SwitchListTile(
+              key: const ValueKey<String>('background_install_charging_only'),
               title: Text(tr('bgUpdatesWhileChargingOnly')),
               value: sp.bgUpdatesWhileChargingOnly,
               onChanged: (bool value) => sp.bgUpdatesWhileChargingOnly = value,
@@ -1150,31 +1154,37 @@ class _UpdatesSection extends StatelessWidget {
     }
     rows.addAll(<Widget>[
       SwitchListTile(
+        key: const ValueKey<String>('check_updates_on_start'),
         title: Text(tr('checkOnStart')),
         value: sp.checkOnStart,
         onChanged: (bool value) => sp.checkOnStart = value,
       ),
       SwitchListTile(
+        key: const ValueKey<String>('check_update_on_detail_page'),
         title: Text(tr('checkUpdateOnDetailPage')),
         value: sp.checkUpdateOnDetailPage,
         onChanged: (bool value) => sp.checkUpdateOnDetailPage = value,
       ),
       SwitchListTile(
+        key: const ValueKey<String>('include_prereleases_by_default'),
         title: Text(tr('includePrereleasesByDefault')),
         value: sp.includePrereleasesByDefault,
         onChanged: (bool value) => sp.includePrereleasesByDefault = value,
       ),
       SwitchListTile(
+        key: const ValueKey<String>('only_check_installed_or_track_only_apps'),
         title: Text(tr('onlyCheckInstalledOrTrackOnlyApps')),
         value: sp.onlyCheckInstalledOrTrackOnlyApps,
         onChanged: (bool value) => sp.onlyCheckInstalledOrTrackOnlyApps = value,
       ),
       SwitchListTile(
+        key: const ValueKey<String>('remove_on_external_uninstall'),
         title: Text(tr('removeOnExternalUninstall')),
         value: sp.removeOnExternalUninstall,
         onChanged: (bool value) => sp.removeOnExternalUninstall = value,
       ),
       SwitchListTile(
+        key: const ValueKey<String>('parallel_downloads'),
         title: Text(tr('parallelDownloads')),
         value: sp.parallelDownloads,
         onChanged: (bool value) => sp.parallelDownloads = value,

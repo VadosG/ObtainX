@@ -243,7 +243,7 @@
     "appsPossiblyUpdated": "App-opdateringer forsøgt",
     "appsPossiblyUpdatedNotifDescription": "Underretter brugeren om, at opdateringer til en eller flere apps muligvis blev udført i baggrunden",
     "xWasPossiblyUpdatedToY": "{} er muligvis blevet opdateret til {}.",
-    "enableBackgroundUpdates": "Aktivér baggrundsopdateringer",
+    "enableBackgroundUpdates": "Installation af opdateringer i baggrunden",
     "backgroundUpdateReqsExplanation": "Baggrundsopdateringer er måske ikke mulige for alle apps.",
     "backgroundUpdateLimitsExplanation": "En vellykket baggrundsinstallation kan kun afgøres, når ObtainX åbnes.",
     "verifyLatestTag": "Verificer 'seneste'-tagget",

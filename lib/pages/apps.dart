@@ -1748,6 +1748,7 @@ String? _rawFileUrlFromRepositoryPageUrl(String url) {
   }
   return null;
 }
+
 String? _gitlabReleaseApiUrlFromUrl(String url) {
   final uri = Uri.tryParse(url);
   if (uri == null) return null;
@@ -1764,8 +1765,7 @@ String? _gitlabReleaseApiUrlFromUrl(String url) {
         .sublist(0, dashIndex)
         .map(Uri.encodeComponent)
         .join('%2F');
-    final String apiBasePath =
-        '/api/v4/projects/$projectPathEncoded/releases';
+    final String apiBasePath = '/api/v4/projects/$projectPathEncoded/releases';
     if (segments.length > dashIndex + 2) {
       final tagName = segments.sublist(dashIndex + 2).join('/');
       return uri
@@ -1775,9 +1775,7 @@ String? _gitlabReleaseApiUrlFromUrl(String url) {
           )
           .toString();
     }
-    return uri
-        .replace(path: apiBasePath, queryParameters: null)
-        .toString();
+    return uri.replace(path: apiBasePath, queryParameters: null).toString();
   }
   return null;
 }
@@ -1796,8 +1794,9 @@ Future<String?> _loadLinkedChangeLog(
       final uri = Uri.parse(gitlabReleaseApiUrl);
       final newQueryParams = Map<String, String>.from(uri.queryParameters);
       newQueryParams['private_token'] = pat;
-      gitlabReleaseApiUrl =
-          uri.replace(queryParameters: newQueryParams).toString();
+      gitlabReleaseApiUrl = uri
+          .replace(queryParameters: newQueryParams)
+          .toString();
     }
   }
 
@@ -2631,91 +2630,110 @@ class AppsPageState extends State<AppsPage> {
   Widget _buildAppsPageSideFabOverlay(
     BuildContext context, {
     required String heroScope,
+    bool matchHomeNavigationPosition = false,
   }) {
     return Positioned(
       left: 16,
       right: 16,
-      bottom: MediaQuery.paddingOf(context).bottom,
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOutCubicEmphasized,
-        offset: MediaQuery.of(context).viewInsets.bottom > 0
-            ? const Offset(0, 1.5)
-            : Offset.zero,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: MediaQuery.of(context).viewInsets.bottom > 0 ? 0.0 : 1.0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              if (hasMassObtainOperations)
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
+      bottom:
+          MediaQuery.paddingOf(context).bottom +
+          (matchHomeNavigationPosition ? 10.0 : 0.0),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: ConstrainedBox(
+          // On compact folder routes there is no navigation pill between the
+          // FABs, but they should retain the same centered positions as the
+          // main Apps tab instead of stretching to the screen edges.
+          constraints: BoxConstraints(
+            maxWidth: matchHomeNavigationPosition ? 336 : double.infinity,
+          ),
+          child: AnimatedSlide(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOutCubicEmphasized,
+            offset: MediaQuery.of(context).viewInsets.bottom > 0
+                ? const Offset(0, 1.5)
+                : Offset.zero,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: MediaQuery.of(context).viewInsets.bottom > 0 ? 0.0 : 1.0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (hasMassObtainOperations)
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        FloatingActionButton.small(
+                          heroTag: '${heroScope}_update_all_fab',
+                          elevation: 6,
+                          highlightElevation: 8,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.primaryContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                          onPressed: () {
+                            hapticSelection();
+                            runMassObtain();
+                          },
+                          tooltip: null,
+                          child: const Icon(
+                            Icons.file_download_outlined,
+                            size: 20,
+                          ),
+                        ),
+                        if (pageUpdateCount > 0)
+                          Positioned(
+                            left: -4,
+                            bottom: -4,
+                            child: Badge(
+                              label: Text(pageUpdateCount.toString()),
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.error,
+                              textColor: Theme.of(context).colorScheme.onError,
+                            ),
+                          ),
+                      ],
+                    )
+                  else
+                    const SizedBox.shrink(),
+                  if (isSelectionActive)
                     FloatingActionButton.small(
-                      heroTag: '${heroScope}_update_all_fab',
+                      heroTag: '${heroScope}_actions_fab',
+                      elevation: 6,
+                      highlightElevation: 8,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      onPressed: () {
+                        hapticSelection();
+                        openSelectionActionsSheet();
+                      },
+                      tooltip: null,
+                      child: const Icon(Icons.checklist, size: 20),
+                    )
+                  else
+                    FloatingActionButton.small(
+                      heroTag: '${heroScope}_view_options_fab',
                       elevation: 6,
                       highlightElevation: 8,
                       backgroundColor: Theme.of(
                         context,
-                      ).colorScheme.primaryContainer,
+                      ).colorScheme.surfaceContainerHighest,
                       foregroundColor: Theme.of(
                         context,
-                      ).colorScheme.onPrimaryContainer,
+                      ).colorScheme.onSurfaceVariant,
                       onPressed: () {
                         hapticSelection();
-                        runMassObtain();
+                        openViewOptionsSheet();
                       },
                       tooltip: null,
-                      child: const Icon(Icons.file_download_outlined, size: 20),
+                      child: const Icon(Icons.tune, size: 20),
                     ),
-                    if (pageUpdateCount > 0)
-                      Positioned(
-                        left: -4,
-                        bottom: -4,
-                        child: Badge(
-                          label: Text(pageUpdateCount.toString()),
-                          backgroundColor: Theme.of(context).colorScheme.error,
-                          textColor: Theme.of(context).colorScheme.onError,
-                        ),
-                      ),
-                  ],
-                )
-              else
-                const SizedBox.shrink(),
-              if (isSelectionActive)
-                FloatingActionButton.small(
-                  heroTag: '${heroScope}_actions_fab',
-                  elevation: 6,
-                  highlightElevation: 8,
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  onPressed: () {
-                    hapticSelection();
-                    openSelectionActionsSheet();
-                  },
-                  tooltip: null,
-                  child: const Icon(Icons.checklist, size: 20),
-                )
-              else
-                FloatingActionButton.small(
-                  heroTag: '${heroScope}_view_options_fab',
-                  elevation: 6,
-                  highlightElevation: 8,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
-                  foregroundColor: Theme.of(
-                    context,
-                  ).colorScheme.onSurfaceVariant,
-                  onPressed: () {
-                    hapticSelection();
-                    openViewOptionsSheet();
-                  },
-                  tooltip: null,
-                  child: const Icon(Icons.tune, size: 20),
-                ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -6074,6 +6092,7 @@ class AppsPageState extends State<AppsPage> {
                           _buildAppsPageSideFabOverlay(
                             context,
                             heroScope: widget.folderId ?? 'ondemand',
+                            matchHomeNavigationPosition: true,
                           ),
                         if (showSplitPaneListFabs)
                           _buildAppsPageSideFabOverlay(

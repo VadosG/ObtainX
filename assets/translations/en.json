@@ -263,7 +263,7 @@
     "appsPossiblyUpdated": "App updates attempted",
     "appsPossiblyUpdatedNotifDescription": "Notifies the user that updates to one or more apps were potentially applied in the background",
     "xWasPossiblyUpdatedToY": "{} may have been updated to {}.",
-    "enableBackgroundUpdates": "Enable background updates",
+    "enableBackgroundUpdates": "Background update installation",
     "backgroundUpdateReqsExplanation": "When on, ObtainX installs updates automatically in the background whenever your selected installer can do it without a prompt: Shizuku always can, the built-in installer only for apps that are already installed, and a third-party installer never (it needs a tap). When off, ObtainX only checks for updates and notifies you; nothing is installed.",
     "backgroundUpdateLimitsExplanation": "The success of a background install can only be determined when ObtainX is opened.",
     "verifyLatestTag": "Verify the 'latest' tag",
