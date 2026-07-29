@@ -1186,6 +1186,77 @@ extension AppsProviderLifecycle on AppsProvider {
     }
   }
 
+  /// Persists [updatedApp] under its new package ID and removes the entry
+  /// stored under [previousPackageId].
+  Future<void> renameAppPackageId(
+    String previousPackageId,
+    App updatedApp,
+  ) async {
+    final String newPackageId = updatedApp.id.trim();
+    final AppInMemory? previousEntry = apps[previousPackageId];
+    if (newPackageId.isEmpty) {
+      throw ObtainiumError(tr('invalidAndroidPackageId'));
+    }
+    if (previousEntry == null) {
+      throw ObtainiumError(tr('unexpectedError'));
+    }
+    if (newPackageId == previousPackageId) {
+      await saveApps([updatedApp], updateInstalledInfo: false);
+      return;
+    }
+    if (apps.containsKey(newPackageId)) {
+      throw ObtainiumError(tr('appAlreadyAdded'));
+    }
+    if (previousEntry.downloadProgress != null) {
+      throw ObtainiumError(tr('unexpectedError'));
+    }
+
+    final File previousUserIcon = _userAppIconPngFile(previousPackageId);
+    final File newUserIcon = _userAppIconPngFile(newPackageId);
+    if (newUserIcon.existsSync()) {
+      deleteFile(newUserIcon);
+    }
+    if (previousUserIcon.existsSync()) {
+      previousUserIcon.renameSync(newUserIcon.path);
+    }
+
+    try {
+      await saveApps(
+        [updatedApp.copyWith(id: newPackageId)],
+        onlyIfExists: false,
+        autoExportAfterSave: false,
+      );
+    } catch (_) {
+      if (newUserIcon.existsSync() && !previousUserIcon.existsSync()) {
+        newUserIcon.renameSync(previousUserIcon.path);
+      }
+      rethrow;
+    }
+
+    final AppInMemory? newEntry = apps[newPackageId];
+    if (newEntry != null) {
+      apps[newPackageId] = AppInMemory(
+        newEntry.app,
+        previousEntry.downloadProgress,
+        newEntry.installedInfo,
+        previousEntry.icon,
+        sourceType: previousEntry.sourceType,
+        download: previousEntry.download,
+      );
+    }
+
+    final ({String? title, String message})? pageError = appPageErrors.remove(
+      previousPackageId,
+    );
+    if (pageError != null) {
+      appPageErrors[newPackageId] = pageError;
+    }
+    detailPageAutoChecksInFlight.remove(previousPackageId);
+    lastDetailPageAutoCheckStartedAt.remove(previousPackageId);
+
+    await removeApps([previousPackageId]);
+  }
+
   Future<RemoveAppsWithModalResult> removeAppsWithModal(
     BuildContext context,
     List<App> appsToAffect,
@@ -1505,8 +1576,7 @@ extension AppsProviderLifecycle on AppsProvider {
         'trackOnlyTemporaryPackageId': isTempId(renamed),
       },
     );
-    await removeApps([previousPackageId]);
-    await saveApps([updatedApp], onlyIfExists: false);
+    await renameAppPackageId(previousPackageId, updatedApp);
   }
 
   /// Reconciles a newly added app with all smart folders. Prefer the live [App]

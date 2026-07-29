@@ -929,8 +929,17 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
     }
     final newUrl = _urlController.text.trim();
     updatedApp = updatedApp.copyWith(url: newUrl);
-    final newId = _packageController.text.trim();
-    if (newId.isNotEmpty && newId != updatedApp.id) {
+    final String newId = _packageController.text.trim();
+    if (newId.isEmpty) {
+      _showPageError(ObtainiumError(tr('invalidAndroidPackageId')));
+      return;
+    }
+    final bool packageIdChanged = newId != updatedApp.id;
+    if (packageIdChanged && appsProvider.apps.containsKey(newId)) {
+      _showPageError(ObtainiumError(tr('appAlreadyAdded')));
+      return;
+    }
+    if (packageIdChanged) {
       updatedApp = updatedApp.copyWith(allowIdChange: true, id: newId);
     }
     updatedApp = updatedApp.copyWith(categories: _editCategories);
@@ -962,14 +971,55 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
       }
     }
 
-    await appsProvider.saveApps(
-      [updatedApp],
-      onlyIfExists: true,
-      updateInstalledInfo: false,
-    );
-    await appsProvider.updateAppIcon(updatedApp.id);
+    try {
+      if (packageIdChanged) {
+        await appsProvider.renameAppPackageId(widget.appId, updatedApp);
+      } else {
+        await appsProvider.saveApps(
+          [updatedApp],
+          onlyIfExists: true,
+          updateInstalledInfo: false,
+        );
+      }
+      await appsProvider.updateAppIcon(updatedApp.id);
+    } catch (error) {
+      if (mounted) {
+        _showPageError(error);
+      }
+      return;
+    }
     if (mounted) {
       _clearEditIconStaging();
+      if (packageIdChanged) {
+        if (widget.isEmbedded) {
+          final AppsPageState? appsPageState = context
+              .findAncestorStateOfType<AppsPageState>();
+          if (appsPageState != null) {
+            appsPageState.openAppById(newId, autoScroll: false);
+          } else {
+            unawaited(
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) =>
+                      AppPage(appId: newId, isEmbedded: true),
+                ),
+              ),
+            );
+          }
+        } else {
+          unawaited(
+            Navigator.of(context).pushReplacement(
+              heroFriendlyAppPageRoute<void>(
+                (BuildContext context) => AppPage(
+                  appId: newId,
+                  appsListHeroFolderId: widget.appsListHeroFolderId,
+                ),
+              ),
+            ),
+          );
+        }
+        return;
+      }
       setState(() => _editMode = false);
       if (_appPageScrollController.hasClients) {
         _appPageScrollController.jumpTo(0);
