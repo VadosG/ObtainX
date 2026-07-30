@@ -784,6 +784,7 @@
     "virusTotalErrorServerTrouble": "VirusTotal is having trouble right now. Try again later.",
     "virusTotalErrorRequestFailed": "VirusTotal request failed (HTTP {}).",
     "virusTotalErrorAnalysisTimedOut": "VirusTotal is still analyzing this file. Try again in a minute.",
+    "virusTotalErrorRequestTimedOut": "VirusTotal did not respond in time. Check your connection and try again.",
     "virusTotalErrorGeneric": "VirusTotal scan failed: {}",
     "virusTotalDetectionSummary": "{}/{} engines flagged this file",
     "stayHere": "Stay here",

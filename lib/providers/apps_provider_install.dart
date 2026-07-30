@@ -2188,7 +2188,7 @@ extension AppsProviderInstall on AppsProvider {
       if (apps[appId] != null) {
         apps[appId]!.app = app;
       }
-      await saveApps([app]);
+      await saveApps([app], updateInstalledInfo: false);
       if (source.shouldEnforceAttestations(
             app.additionalSettings,
             settingsProvider,
@@ -2219,11 +2219,11 @@ extension AppsProviderInstall on AppsProvider {
       if (apps[appId] != null) {
         apps[appId]!.app = app;
       }
-      await saveApps([app]);
       apps[appId]?.downloadProgress = scan.status != malwareScanStatusClean
           ? _flaggedProgressSentinel
           : _installingProgressSentinel;
       notify();
+      await saveApps([app], updateInstalledInfo: false);
       final bool proceed = await _handleMalwareScanResult(
         app: app,
         status: scan.status!,
