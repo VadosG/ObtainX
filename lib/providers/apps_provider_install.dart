@@ -443,7 +443,7 @@ extension AppsProviderInstall on AppsProvider {
             receivedBytes: received,
             totalBytes: total,
           );
-          if (prog != null && prevProg != prog) {
+          if (prog != null && (prevProg == null || (prog - prevProg!).abs() >= 5 || prog == 100)) {
             if (nativeDownloadServiceStarted) {
               unawaited(
                 NativeFeatures.showDownloadProgressNotification(
@@ -461,8 +461,8 @@ extension AppsProviderInstall on AppsProvider {
             } else {
               unawaited(notificationsProvider?.notify(notif));
             }
+            prevProg = prog;
           }
-          prevProg = prog;
         },
         this.apkDir.path,
         useExisting: useExisting,
