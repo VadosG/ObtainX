@@ -229,15 +229,16 @@ class GitLab extends AppSource {
         final DateTime? releaseDate = releaseDateString != null
             ? DateTime.tryParse(releaseDateString.toString())
             : null;
-        final String? rawChangeLog = (e['description'] ??
-                e['release']?['description'] ??
-                e['message'] ??
-                e['commit']?['message'])
-            ?.toString();
+        final String? rawChangeLog =
+            (e['description'] ??
+                    e['release']?['description'] ??
+                    e['message'] ??
+                    e['commit']?['message'])
+                ?.toString();
         final String? changeLog =
             (rawChangeLog != null && rawChangeLog.trim().isNotEmpty)
-                ? rawChangeLog.trim()
-                : null;
+            ? rawChangeLog.trim()
+            : null;
         return APKDetails(
           e['tag_name'] ?? e['name'],
           apkUrls.entries.toList(),

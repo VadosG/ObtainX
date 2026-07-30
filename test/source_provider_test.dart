@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 // ignore: depend_on_referenced_packages
 import 'package:device_info_plus_platform_interface/device_info_plus_platform_interface.dart';
@@ -413,6 +415,16 @@ void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
   DeviceInfoPlatform.instance = _FakeAndroidDeviceInfoPlatform();
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall methodCall) async {
+          if (methodCall.method == 'getApplicationDocumentsDirectory') {
+            return Directory.systemTemp.path;
+          }
+          return null;
+        },
+      );
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -1093,8 +1105,10 @@ class _StubGitLab extends GitLab {
   @override
   Future<Response> sourceRequest(
     String url,
-    Map<String, dynamic> additionalSettings,
-  ) async {
+    Map<String, dynamic> additionalSettings, {
+    bool followRedirects = true,
+    Object? postBody,
+  }) async {
     if (url.contains('/api/v4/projects/')) {
       if (!url.contains('/releases') && !url.contains('/tags')) {
         return Response(jsonEncode(<String, dynamic>{'id': 12345}), 200);

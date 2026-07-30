@@ -4085,6 +4085,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
                     updatedApp.additionalSettings.remove(
                       'skippedLatestVersion',
                     );
+                    updatedApp.additionalSettings.remove(installStatusResetKey);
                     appsProvider.saveApps(
                       [updatedApp],
                       attemptToCorrectInstallStatus: false,
@@ -4194,6 +4195,11 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
           !trackOnly &&
           !isVersionDetectionStandard &&
           (actionableUpdate || uncertainUpdate);
+      final bool hasResetStatus =
+          installedVersionIsNull &&
+          app != null &&
+          (app.app.additionalSettings[installStatusResetKey] != null ||
+              app.installedInfo != null);
       // Version order unclear: user should use Update and/or Skip only; no manual
       // "mark as latest" second button (mutually exclusive with actionableUpdate).
       final bool uncertainOnly = uncertainUpdate;
@@ -4289,6 +4295,57 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
         launchUrlString(
           trackOnlyDownloadPageUrl(app.app),
           mode: LaunchMode.externalApplication,
+        );
+      }
+
+      if (hasResetStatus) {
+        const double dualButtonBarHeight = 52;
+        final bool markUpdatedActionBlocked =
+            updating || app.downloadProgress != null;
+        return wrapPrimaryBarWithSkip(
+          SizedBox(
+            height: dualButtonBarHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: FilledButton(
+                    style: expressiveFilled,
+                    onPressed: installActionBlocked
+                        ? null
+                        : runInstallOrMarkUpdated,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.center,
+                      child: Text(
+                        installLabel,
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    style: expressiveFilled,
+                    onPressed: markUpdatedActionBlocked
+                        ? null
+                        : showMarkUpdatedDialog,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.center,
+                      child: Text(
+                        tr('markUpdated'),
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       }
 

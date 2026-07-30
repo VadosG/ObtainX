@@ -443,7 +443,10 @@ extension AppsProviderInstall on AppsProvider {
             receivedBytes: received,
             totalBytes: total,
           );
-          if (prog != null && (prevProg == null || (prog - prevProg!).abs() >= 5 || prog == 100)) {
+          if (prog != null &&
+              (prevProg == null ||
+                  (prog - prevProg!).abs() >= 5 ||
+                  prog == 100)) {
             if (nativeDownloadServiceStarted) {
               unawaited(
                 NativeFeatures.showDownloadProgressNotification(
