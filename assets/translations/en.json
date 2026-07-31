@@ -142,6 +142,7 @@
     "neverManualOnly": "Never - manual only",
     "appearance": "Appearance",
     "showWebInAppView": "Show source webpage in app view",
+    "updateButtonsAtTopOfAppPage": "Update buttons at top of app page",
     "pinUpdates": "Pin updates to top of apps view",
     "updates": "Updates",
     "sourceSpecific": "Source-specific",

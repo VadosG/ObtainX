@@ -1879,6 +1879,7 @@ class _AppearanceSection extends StatelessWidget {
     sp.appUiScale,
     sp.cardCornerScale,
     sp.showAppWebpage,
+    sp.updateButtonsAtTopOfAppPage,
     sp.highlightTouchTargets,
     sp.alwaysUsePhoneLayout,
     sp.customFontPath,
@@ -1905,6 +1906,11 @@ class _AppearanceSection extends StatelessWidget {
         _CustomFontTile(sp: sp),
         const _UiScaleSlider(),
         const _CardCornerScaleSlider(),
+        SwitchListTile(
+          title: Text(tr('updateButtonsAtTopOfAppPage')),
+          value: sp.updateButtonsAtTopOfAppPage,
+          onChanged: (value) => sp.updateButtonsAtTopOfAppPage = value,
+        ),
         SwitchListTile(
           title: Text(tr('alwaysUsePhoneLayout')),
           value: sp.alwaysUsePhoneLayout,

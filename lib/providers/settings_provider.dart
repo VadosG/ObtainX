@@ -931,6 +931,15 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get updateButtonsAtTopOfAppPage {
+    return prefs?.getBool('updateButtonsAtTopOfAppPage') ?? false;
+  }
+
+  set updateButtonsAtTopOfAppPage(bool value) {
+    prefs?.setBool('updateButtonsAtTopOfAppPage', value);
+    notifyListeners();
+  }
+
   bool get pinUpdates {
     return prefs?.getBool('pinUpdates') ?? true;
   }
