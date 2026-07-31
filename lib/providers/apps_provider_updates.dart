@@ -82,11 +82,25 @@ bool _boundedVersionSubstringInHaystack(
       // ".0" inside "8.0" must not match as a standalone version.
       return false;
     }
+    if (_isDigit(firstUnit) &&
+        prevUnit == 0x2E &&
+        startIndex > 1 &&
+        _isDigit(longer.codeUnitAt(startIndex - 2))) {
+      // "0.2" inside "153.0.2" must not match as a standalone version.
+      return false;
+    }
   }
   if (endIndex < longer.length) {
     final int lastUnit = needle.codeUnitAt(needleLen - 1);
     final int nextUnit = longer.codeUnitAt(endIndex);
     if (_isDigit(lastUnit) && _isDigit(nextUnit)) {
+      return false;
+    }
+    if (_isDigit(lastUnit) &&
+        nextUnit == 0x2E &&
+        endIndex + 1 < longer.length) {
+      // A non-empty dot segment extends the version, whether it starts with a
+      // digit ("153.0.2") or hash-like text ("26.03.a4d75424").
       return false;
     }
   }
@@ -146,10 +160,21 @@ Set<String> commitHashLikeTokensFromVersion(String version) {
   return result;
 }
 
+bool _isOnlyZeroSegments(String suffix) {
+  final List<String> segments = suffix.split('.');
+  for (final String segment in segments) {
+    if (segment.isEmpty) return false;
+    if (!_digitsOnlySegmentPattern.hasMatch(segment)) return false;
+    if (int.tryParse(segment) != 0) return false;
+  }
+  return true;
+}
+
 /// True if both versions are equal or one is a prefix of the other with a
-/// non-digit next (e.g. 50.5.19 and 50.5.19-31), or both contain the same
-/// commit-hash-like token (6+ hex chars). Avoids a false match of 1.0 in 10.0
-/// by requiring a boundary after the shorter.
+/// non-digit/non-dot suffix (e.g. 50.5.19 and 50.5.19-31), or zero-only dot
+/// extension (e.g. 1.2 and 1.2.0), or both contain the same commit-hash-like
+/// token (6+ hex chars). Avoids a false match of 1.0 in 10.0 by requiring a
+/// boundary after the shorter.
 bool versionsEffectivelyEqual(String installed, String latest) {
   if (installed == latest) return true;
   if (installed.isEmpty || latest.isEmpty) return false;
@@ -162,17 +187,29 @@ bool versionsEffectivelyEqual(String installed, String latest) {
   }
   final installedLen = installed.length;
   final latestLen = latest.length;
-  if (latest.startsWith(installed) &&
-      (installedLen == latestLen ||
-          (latestLen > installedLen &&
-              !_isDigit(latest.codeUnitAt(installedLen))))) {
-    return true;
+  if (latest.startsWith(installed) && latestLen > installedLen) {
+    final nextChar = latest.codeUnitAt(installedLen);
+    if (!_isDigit(nextChar)) {
+      if (nextChar == 0x2E) {
+        if (_isOnlyZeroSegments(latest.substring(installedLen + 1))) {
+          return true;
+        }
+      } else {
+        return true;
+      }
+    }
   }
-  if (installed.startsWith(latest) &&
-      (installedLen == latestLen ||
-          (installedLen > latestLen &&
-              !_isDigit(installed.codeUnitAt(latestLen))))) {
-    return true;
+  if (installed.startsWith(latest) && installedLen > latestLen) {
+    final nextChar = installed.codeUnitAt(latestLen);
+    if (!_isDigit(nextChar)) {
+      if (nextChar == 0x2E) {
+        if (_isOnlyZeroSegments(installed.substring(latestLen + 1))) {
+          return true;
+        }
+      } else {
+        return true;
+      }
+    }
   }
   if (_oneVersionStringContainsOtherAsBoundedSubstring(installed, latest)) {
     return true;

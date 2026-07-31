@@ -256,6 +256,33 @@ void main() {
   );
 
   test(
+    'dot releases like 153.0 and 153.0.2 are recognized as distinct versions',
+    () {
+      expect(versionsEffectivelyEqual('153.0', '153.0.2'), false);
+      expect(versionsEffectivelyEqual('153.0.2', '153.0'), false);
+      expect(compareVersionsByNumericSegments('153.0', '153.0.2'), -1);
+      expect(compareVersionsByNumericSegments('153.0.2', '153.0'), 1);
+    },
+  );
+
+  test(
+    'dot-separated hash suffixes like 26.03 and 26.03.a4d75424 are recognized as distinct versions',
+    () {
+      expect(versionsEffectivelyEqual('26.03', '26.03.a4d75424'), false);
+      expect(versionsEffectivelyEqual('26.03.a4d75424', '26.03'), false);
+    },
+  );
+
+  test(
+    'zero-only trailing dot segments like 1.2 and 1.2.0 are effectively equal',
+    () {
+      expect(versionsEffectivelyEqual('1.2', '1.2.0'), true);
+      expect(versionsEffectivelyEqual('1.2.0', '1.2'), true);
+      expect(versionOrderIsUnclear('1.2', '1.2.0'), false);
+    },
+  );
+
+  test(
     'release package lookup only includes debug build when requested',
     () async {
       // The standalone packageNamesToTryForInstalledInfo helper was inlined into

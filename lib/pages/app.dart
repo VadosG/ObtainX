@@ -2134,9 +2134,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
             !widget.showOppositeOfPreferredView) ||
         (!settingsProvider.showAppWebpage &&
             widget.showOppositeOfPreferredView);
-
     final bool areDownloadsRunning = appsProvider.areDownloadsRunning();
-
     final AppInMemory? app = appsProvider.apps[widget.appId];
     final List<String> loadedCertificateHashes =
         app?.certificateHashes ?? const <String>[];
@@ -2658,7 +2656,14 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
       );
     }
 
-    Widget getBottomCenterActions(BuildContext themeContext) {
+    Widget getBottomCenterActions(
+      BuildContext themeContext,
+      AppInMemory? app, {
+      required AppSource? source,
+      required bool trackOnly,
+      required bool isVersionDetectionStandard,
+      required bool areDownloadsRunning,
+    }) {
       final ThemeData actionTheme = Theme.of(themeContext);
       const double expressiveRadius = 26;
       const EdgeInsets expressivePadding = EdgeInsets.symmetric(
@@ -3078,8 +3083,33 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
       );
     }
 
-    Column getInfoColumn(BuildContext pageThemeContext, {bool small = false}) {
+    Column getInfoColumn(
+      BuildContext pageThemeContext,
+      AppInMemory? app, {
+      bool small = false,
+    }) {
       final ThemeData pageTheme = Theme.of(pageThemeContext);
+      AppSource? source;
+      if (app != null) {
+        final String sourceKey =
+            '${app.app.url} ${app.app.overrideSource ?? ''}';
+        if (sourceKey != _cachedSourceKey) {
+          _cachedSource = _sourceProvider.getSource(
+            app.app.url,
+            overrideSource: app.app.overrideSource,
+          );
+          _cachedSourceKey = sourceKey;
+        }
+        source = _cachedSource;
+      }
+      final bool trackOnly = app?.app.additionalSettings['trackOnly'] == true;
+      final bool isVersionDetectionStandard =
+          app?.app.additionalSettings['versionDetection'] == 'auto' ||
+          app?.app.additionalSettings['versionDetection'] == 'standard' ||
+          app?.app.additionalSettings['versionDetection'] == 'versionCode' ||
+          app?.app.additionalSettings['versionDetection'] == true ||
+          app?.app.additionalSettings['versionDetection'] == null;
+      final bool areDownloadsRunning = appsProvider.areDownloadsRunning();
       final undeterminedTrackOnlyInstalled =
           trackOnly &&
           app?.app.additionalSettings['trackOnlyUndeterminedInstalledVersion'] ==
@@ -4208,7 +4238,14 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
           ? null
           : Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: getBottomCenterActions(pageThemeContext),
+              child: getBottomCenterActions(
+                pageThemeContext,
+                app,
+                source: source,
+                trackOnly: trackOnly,
+                isVersionDetectionStandard: isVersionDetectionStandard,
+                areDownloadsRunning: areDownloadsRunning,
+              ),
             );
 
       return Column(
@@ -4346,7 +4383,11 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
       );
     }
 
-    Column getFullInfoColumn(BuildContext themeContext, {bool small = false}) {
+    Column getFullInfoColumn(
+      BuildContext themeContext,
+      AppInMemory? app, {
+      bool small = false,
+    }) {
       final ThemeData dialogColumnTheme = Theme.of(themeContext);
       const heroIconSize = 48.0;
       final double dialogIconSize = small ? 70 : heroIconSize;
@@ -4456,7 +4497,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
               ],
             ),
             SizedBox(height: settingsProvider.highlightTouchTargets ? 2 : 8),
-            getInfoColumn(themeContext, small: true),
+            getInfoColumn(themeContext, app, small: true),
             const SizedBox(height: 24),
           ],
         );
@@ -4509,7 +4550,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
               ],
             ),
           ),
-          getInfoColumn(themeContext, small: false),
+          getInfoColumn(themeContext, app, small: false),
           const SizedBox(height: 24),
         ],
       );
@@ -4615,26 +4656,39 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
                           fullWidth: true,
                           backgroundColor: pageThemeForPage.colorScheme.surface,
                           builder: (BuildContext sheetRouteContext) {
-                            return Theme(
-                              data: pageThemeForPage,
-                              child: Builder(
-                                builder: (BuildContext sheetThemedContext) {
-                                  return AppSheetContent(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      0,
-                                      0,
-                                      0,
-                                      16,
-                                    ),
-                                    children: [
-                                      getFullInfoColumn(
-                                        sheetThemedContext,
-                                        small: true,
+                            return Selector<AppsProvider, int>(
+                              selector:
+                                  (BuildContext _, AppsProvider provider) =>
+                                      appPageAppsRebuildToken(
+                                        provider,
+                                        widget.appId,
                                       ),
-                                    ],
-                                  );
-                                },
-                              ),
+                              builder: (BuildContext _, int _, Widget? _) {
+                                final AppInMemory? sheetApp =
+                                    appsProvider.apps[widget.appId];
+                                return Theme(
+                                  data: pageThemeForPage,
+                                  child: Builder(
+                                    builder: (BuildContext sheetThemedContext) {
+                                      return AppSheetContent(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          0,
+                                          0,
+                                          0,
+                                          16,
+                                        ),
+                                        children: [
+                                          getFullInfoColumn(
+                                            sheetThemedContext,
+                                            sheetApp,
+                                            small: true,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
                             );
                           },
                         );
@@ -5043,6 +5097,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
                                               ),
                                               getInfoColumn(
                                                 themedPageContext,
+                                                app,
                                                 small: false,
                                               ),
                                             ],
