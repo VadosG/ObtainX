@@ -1096,6 +1096,23 @@ void main() {
       expect(details.changeLog, '## Release 4.8.3\n- Fixed changelog issue');
     },
   );
+
+  test(
+    'getDefaultValuesFromFormItems inflates subform items with full defaults',
+    () {
+      final html = HTML();
+      final defaults = getDefaultValuesFromFormItems(
+        html.combinedAppSpecificSettingFormItems,
+      );
+
+      final requestHeaders = defaults['requestHeader'] as List?;
+      expect(requestHeaders, isNotNull);
+      expect(requestHeaders!.length, 1);
+      final reqMap = requestHeaders.first as Map<String, dynamic>;
+      expect(reqMap.containsKey('requestHeader'), true);
+      expect(reqMap['requestHeader'], contains('Mozilla/5.0'));
+    },
+  );
 }
 
 class _StubGitLab extends GitLab {

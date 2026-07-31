@@ -173,6 +173,20 @@ class GitLab extends AppSource {
         throw NoReleasesError();
       }
       final json = decoded;
+      final List<String> rawReleaseTitleCandidates = <String>[];
+      for (final rel in json) {
+        if (rel is Map<String, dynamic>) {
+          final String? title =
+              (rel['name'] as String?)?.trim().isNotEmpty == true
+                  ? (rel['name'] as String).trim()
+                  : (rel['tag_name'] as String?)?.trim();
+          if (title != null &&
+              title.isNotEmpty &&
+              !rawReleaseTitleCandidates.contains(title)) {
+            rawReleaseTitleCandidates.add(title);
+          }
+        }
+      }
       apkDetailsList = json.map((e) {
         final apkUrlsFromAssets =
             (e['assets']?['links'] as List<dynamic>? ?? [])
@@ -245,6 +259,7 @@ class GitLab extends AppSource {
           AppNames(names.author, names.name.split('/').last),
           releaseDate: releaseDate,
           changeLog: changeLog,
+          rawReleaseTitleCandidates: rawReleaseTitleCandidates,
         );
       });
       if (apkDetailsList.isEmpty) {

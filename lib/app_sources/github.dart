@@ -1170,6 +1170,21 @@ class GitHub extends AppSource {
             : githubAttestationStatusError;
       }
 
+      final List<String> rawReleaseTitleCandidates = <String>[];
+      for (final rel in releases) {
+        if (rel is Map<String, dynamic>) {
+          final String? title =
+              (rel['name'] as String?)?.trim().isNotEmpty == true
+                  ? (rel['name'] as String).trim()
+                  : (rel['tag_name'] as String?)?.trim();
+          if (title != null &&
+              title.isNotEmpty &&
+              !rawReleaseTitleCandidates.contains(title)) {
+            rawReleaseTitleCandidates.add(title);
+          }
+        }
+      }
+
       return APKDetails(
         version,
         apkUrls,
@@ -1178,6 +1193,7 @@ class GitHub extends AppSource {
         changeLog: changeLog.isEmpty ? null : changeLog,
         allAssetUrls:
             targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
+        rawReleaseTitleCandidates: rawReleaseTitleCandidates,
         apkSizeBytes: apkSizeBytes,
         attestationStatus: attestationStatus,
       );

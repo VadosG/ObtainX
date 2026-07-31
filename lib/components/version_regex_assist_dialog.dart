@@ -1,8 +1,9 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
+import 'package:obtainium/components/ui_widgets.dart';
 import 'package:obtainium/providers/source_provider.dart';
-import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
 
 typedef RegexAssistRawVersionResolver =
@@ -444,10 +445,10 @@ Future<void> showRegexAssistDialog({
   required String? filterFieldKey,
   required FormValuesTextPatch patch,
 }) async {
-  await showDialog<void>(
+  await showAppModalSheet<void>(
     context: context,
-    builder: (BuildContext dialogContext) {
-      return _RegexAssistDialogBody(
+    builder: (BuildContext sheetContext) {
+      return _RegexAssistSheetBody(
         kind: kind,
         initialRaw: initialRaw,
         initialDesired: initialDesired,
@@ -459,8 +460,8 @@ Future<void> showRegexAssistDialog({
   );
 }
 
-class _RegexAssistDialogBody extends StatefulWidget {
-  const _RegexAssistDialogBody({
+class _RegexAssistSheetBody extends StatefulWidget {
+  const _RegexAssistSheetBody({
     required this.kind,
     required this.initialRaw,
     required this.initialDesired,
@@ -477,10 +478,10 @@ class _RegexAssistDialogBody extends StatefulWidget {
   final FormValuesTextPatch patch;
 
   @override
-  State<_RegexAssistDialogBody> createState() => _RegexAssistDialogBodyState();
+  State<_RegexAssistSheetBody> createState() => _RegexAssistSheetBodyState();
 }
 
-class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
+class _RegexAssistSheetBodyState extends State<_RegexAssistSheetBody> {
   late final TextEditingController _rawController;
   late List<String> _candidates;
   String? _selectedCandidate;
@@ -577,6 +578,18 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
     }
   }
 
+  String _rawPlaceholder() {
+    switch (widget.kind) {
+      case RegexAssistKind.versionExtraction:
+      case RegexAssistKind.versionFilter:
+        return tr('versionRegexAssistRawPlaceholder');
+      case RegexAssistKind.apkFilter:
+        return tr('filterRegexAssistTitleApk');
+      case RegexAssistKind.releaseTitleFilter:
+        return tr('filterRegexAssistTitleRelease');
+    }
+  }
+
   String _pickSubstringLabel() {
     switch (widget.kind) {
       case RegexAssistKind.versionExtraction:
@@ -593,18 +606,14 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
   void _applySelection() {
     final String raw = _rawController.text.trim();
     if (raw.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(tr('versionRegexAssistNeedRaw'))));
+      showTopToast(context, tr('versionRegexAssistNeedRaw'), isError: true);
       return;
     }
     final String desired = _customController.text.trim().isNotEmpty
         ? _customController.text.trim()
         : (_selectedCandidate ?? '').trim();
     if (desired.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('versionRegexAssistPickOrType'))),
-      );
+      showTopToast(context, tr('versionRegexAssistPickOrType'), isError: true);
       return;
     }
     if (widget.kind == RegexAssistKind.versionExtraction) {
@@ -613,8 +622,10 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
         desired: desired,
       );
       if (built == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('versionRegexAssistCouldNotBuild'))),
+        showTopToast(
+          context,
+          tr('versionRegexAssistCouldNotBuild'),
+          isError: true,
         );
         return;
       }
@@ -625,8 +636,10 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
         desired: desired,
       );
       if (pattern == null || widget.filterFieldKey == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(tr('versionRegexAssistCouldNotBuild'))),
+        showTopToast(
+          context,
+          tr('versionRegexAssistCouldNotBuild'),
+          isError: true,
         );
         return;
       }
@@ -638,10 +651,25 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return AlertDialog(
-      title: Text(_dialogTitle()),
-      contentPadding: appDialogContentPadding,
-      content: SingleChildScrollView(
+    return AppSheetScaffold(
+      header: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _dialogTitle(),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -652,7 +680,7 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             if (widget.rawLineSuggestions.length > 1) ...<Widget>[
               Text(
                 tr('filterRegexAssistPickRawLineLabel'),
@@ -693,7 +721,7 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
               decoration: appPageOutlinedInputDecoration(
                 context,
                 labelText: null,
-                hintText: tr('versionRegexAssistRawPlaceholder'),
+                hintText: _rawPlaceholder(),
               ),
               onChanged: (_) => setState(_rebuildCandidates),
             ),
@@ -770,19 +798,25 @@ class _RegexAssistDialogBodyState extends State<_RegexAssistDialogBody> {
                 });
               },
             ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(tr('cancel')),
-        ),
-        FilledButton(
-          onPressed: _applySelection,
-          child: Text(tr('versionRegexAssistApply')),
-        ),
-      ],
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(tr('cancel')),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: _applySelection,
+            child: Text(tr('versionRegexAssistApply')),
+          ),
+        ],
+      ),
     );
   }
 }
+

@@ -45,6 +45,87 @@ Future<bool> showConfirmDialog(
   return confirmed ?? false;
 }
 
+/// Displays a floating toast banner on the root [Overlay] so that it appears
+/// ON TOP OF EVERYTHING (including modal bottom sheets, dialogs, keyboards, and app bars).
+void showTopToast(
+  BuildContext context,
+  String message, {
+  bool isError = false,
+  Duration duration = const Duration(seconds: 3),
+}) {
+  final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (BuildContext toastContext) {
+      final ThemeData theme = Theme.of(toastContext);
+      final ColorScheme scheme = theme.colorScheme;
+      final double bottomInset = MediaQuery.viewInsetsOf(toastContext).bottom;
+      final double bottomPadding = MediaQuery.paddingOf(toastContext).bottom;
+      return Positioned(
+        bottom: bottomInset + bottomPadding + 20,
+        left: 16,
+        right: 16,
+        child: Material(
+          type: MaterialType.transparency,
+          child: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 480),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isError ? scheme.errorContainer : scheme.inverseSurface,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.24),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isError
+                        ? Icons.error_outline_rounded
+                        : Icons.info_outline_rounded,
+                    size: 20,
+                    color: isError
+                        ? scheme.onErrorContainer
+                        : scheme.onInverseSurface,
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      message,
+                      style: TextStyle(
+                        color: isError
+                            ? scheme.onErrorContainer
+                            : scheme.onInverseSurface,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  overlay.insert(entry);
+  Timer(duration, () {
+    if (entry.mounted) {
+      entry.remove();
+    }
+  });
+}
+
 // showMessage / showError intentionally live ONLY in custom_errors.dart (the
 // themed versions, with a SnackBar duration and a dialog Theme wrapper).
 // Callers that need them should import custom_errors.dart directly; a local
