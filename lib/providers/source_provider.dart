@@ -868,7 +868,7 @@ abstract class AppSource {
 
   String standardizeUrl(String url) {
     url = preStandardizeUrl(url);
-    if (!hostChanged) {
+    if (!hostChanged || hostIdenticalDespiteAnyChange) {
       url = sourceSpecificStandardizeURL(url);
     }
     return url;

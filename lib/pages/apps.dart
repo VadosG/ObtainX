@@ -1229,7 +1229,9 @@ class _AppListItem extends StatelessWidget {
                           maxLines: 1,
                           style: TextStyle(
                             overflow: TextOverflow.ellipsis,
-                            fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
+                            fontWeight: pinned
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                           ),
                         )
                       : null,

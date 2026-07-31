@@ -617,6 +617,8 @@ Future<File> _downloadFile(
                 'errorWithHttpStatusCode',
                 args: [response.statusCode.toString()],
               ),
+        code: 'HTTP_ERROR',
+        data: <String, dynamic>{'statusCode': response.statusCode},
       )..url = url;
     }
 

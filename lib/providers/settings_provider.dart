@@ -1411,6 +1411,8 @@ class SettingsProvider with ChangeNotifier {
       // Retry once so transient SAF failures do not hide a still-valid grant.
       await Future<void>.delayed(const Duration(milliseconds: 200));
       if (!await _canReadAndWriteSafTree(uri)) {
+        await prefs?.remove('exportDir');
+        notifyListeners();
         if (warnIfInaccessible) {
           _showStorageAccessWarning(isExportDir: true);
         }
@@ -1480,6 +1482,8 @@ class SettingsProvider with ChangeNotifier {
     if (!await _canReadAndWriteSafTree(uri)) {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       if (!await _canReadAndWriteSafTree(uri)) {
+        await prefs?.remove('apkSaveDir');
+        notifyListeners();
         if (warnIfInaccessible) {
           _showStorageAccessWarning(isExportDir: false);
         }
@@ -1536,11 +1540,19 @@ class SettingsProvider with ChangeNotifier {
   Future<bool> _canReadAndWriteSafTree(Uri treeUri) async {
     try {
       if (await NativeFeatures.hasPersistedDocumentTreePermission(treeUri)) {
-        final bool canReadTree = await saf.canRead(treeUri) ?? false;
+        bool canReadTree = await saf.canRead(treeUri) ?? false;
         if (!canReadTree) {
-          return false;
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          canReadTree = await saf.canRead(treeUri) ?? false;
+          if (!canReadTree) {
+            return false;
+          }
         }
-        final bool canWriteTree = await saf.canWrite(treeUri) ?? false;
+        bool canWriteTree = await saf.canWrite(treeUri) ?? false;
+        if (!canWriteTree) {
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          canWriteTree = await saf.canWrite(treeUri) ?? false;
+        }
         return canWriteTree;
       }
 
@@ -1574,7 +1586,15 @@ class SettingsProvider with ChangeNotifier {
       _lastApkSaveDirAccessWarningAt = now;
     }
 
-    showAppToast(tr('storagePermissionDenied'), type: ToastType.error);
+    showAppToast(
+      tr(
+        isExportDir
+            ? 'exportFolderAccessUnavailable'
+            : 'apkSaveFolderAccessUnavailable',
+      ),
+      type: ToastType.error,
+      duration: const Duration(seconds: 5),
+    );
   }
 
   /// When true (and an APK save folder is set), copies of downloaded APKs are

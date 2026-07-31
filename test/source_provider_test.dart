@@ -13,6 +13,8 @@ import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form_model.dart';
+import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/providers/apps_provider_install.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:http/http.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -469,6 +471,68 @@ void main() {
     expect(overriddenSource.hosts, <String>['git.example.com']);
     expect(overriddenSource.hostChanged, isTrue);
     expect(githubTemplate.hosts, contains('github.com'));
+  });
+
+  test('same-host GitHub override still normalizes repository URLs', () {
+    final SourceProvider provider = SourceProvider();
+    final AppSource githubTemplate = provider.getSourceTemplate(
+      'https://github.com/example/app',
+    );
+    final AppSource overriddenSource = provider.getSource(
+      'https://github.com/example/app/releases/',
+      overrideSource: githubTemplate.sourceIdentifier,
+    );
+
+    expect(overriddenSource, isA<GitHub>());
+    expect(overriddenSource.hostChanged, isTrue);
+    expect(overriddenSource.hostIdenticalDespiteAnyChange, isTrue);
+    expect(
+      overriddenSource.standardizeUrl(
+        'https://github.com/example/app/releases/',
+      ),
+      'https://github.com/example/app',
+    );
+  });
+
+  test('GitHub download retries 401 without an authorization header', () {
+    final Map<String, String> headers = <String, String>{
+      HttpHeaders.authorizationHeader: 'Bearer invalid-token',
+      HttpHeaders.acceptHeader: 'application/octet-stream',
+    };
+    final ObtainiumError unauthorizedError = ObtainiumError(
+      'Unauthorized',
+      code: 'HTTP_ERROR',
+      data: <String, dynamic>{'statusCode': HttpStatus.unauthorized},
+    );
+
+    expect(
+      shouldRetryGitHubDownloadWithoutAuthorization(
+        source: GitHub(),
+        headers: headers,
+        error: unauthorizedError,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldRetryGitHubDownloadWithoutAuthorization(
+        source: GitHub(),
+        headers: headers,
+        error: ObtainiumError(
+          'Forbidden',
+          code: 'HTTP_ERROR',
+          data: <String, dynamic>{'statusCode': HttpStatus.forbidden},
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      shouldRetryGitHubDownloadWithoutAuthorization(
+        source: _StubSource(),
+        headers: headers,
+        error: unauthorizedError,
+      ),
+      isFalse,
+    );
   });
 
   // ── Size cache key invalidation ─────────────────────────────────────

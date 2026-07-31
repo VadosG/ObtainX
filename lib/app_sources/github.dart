@@ -301,7 +301,7 @@ class GitHub extends AppSource {
     final token = await getTokenIfAny(additionalSettings);
     final headers = <String, String>{};
     if (token != null && token.isNotEmpty) {
-      headers[HttpHeaders.authorizationHeader] = 'Token $token';
+      headers[HttpHeaders.authorizationHeader] = 'Bearer $token';
     }
     if (forAPKDownload == true) {
       headers[HttpHeaders.acceptHeader] = 'application/octet-stream';
@@ -311,6 +311,43 @@ class GitHub extends AppSource {
     } else {
       return null;
     }
+  }
+
+  @override
+  Future<Response> sourceRequest(
+    String url,
+    Map<String, dynamic> additionalSettings, {
+    bool followRedirects = true,
+    Object? postBody,
+  }) async {
+    final Response res = await super.sourceRequest(
+      url,
+      additionalSettings,
+      followRedirects: followRedirects,
+      postBody: postBody,
+    );
+    final String? token = await getTokenIfAny(additionalSettings);
+    if (res.statusCode == 401 && token != null && token.isNotEmpty) {
+      final Map<String, dynamic> unauthSettings = Map<String, dynamic>.from(
+        additionalSettings,
+      );
+      unauthSettings[githubCredsKey] = '';
+      final Response retryRes = await super.sourceRequest(
+        url,
+        unauthSettings,
+        followRedirects: followRedirects,
+        postBody: postBody,
+      );
+      if (retryRes.statusCode < 400) {
+        unawaited(
+          LogsProvider().add(
+            'GitHub API returned 401 with stored PAT. Retried unauthenticated successfully. Please check or update your GitHub Personal Access Token in Settings.',
+          ),
+        );
+        return retryRes;
+      }
+    }
+    return res;
   }
 
   Future<String?> getTokenIfAny(Map<String, dynamic> additionalSettings) async {

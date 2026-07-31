@@ -516,6 +516,8 @@
     "importExportBackupScopeAllAppsAndSettings": "Apps & Settings (With secrets)",
     "pickConfigExportFolder": "Pick ObtainX backup folder",
     "configExportFolderDescription": "Where ObtainX exports your backup JSON.",
+    "exportFolderAccessUnavailable": "Backup folder access was lost. Re-select the folder in Settings.",
+    "apkSaveFolderAccessUnavailable": "APK save folder access was lost. Re-select the folder in Settings.",
     "appPageAppInfo": "App Info",
     "addAppSearchResultsTitle": "Select",
     "settingsThemeColorsHint": "Accent and dynamic color source",

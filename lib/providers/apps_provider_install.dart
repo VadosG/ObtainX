@@ -63,6 +63,20 @@ bool isCleartextDownloadUrl(String url) {
   return Uri.tryParse(url)?.scheme.toLowerCase() == 'http';
 }
 
+@visibleForTesting
+bool shouldRetryGitHubDownloadWithoutAuthorization({
+  required AppSource source,
+  required Map<String, String>? headers,
+  required Object error,
+}) {
+  if (source is! GitHub ||
+      headers?[HttpHeaders.authorizationHeader]?.isNotEmpty != true ||
+      error is! ObtainiumError) {
+    return false;
+  }
+  return error.data['statusCode'] == HttpStatus.unauthorized;
+}
+
 /// Processes completed downloads one at a time, in the order they finish.
 /// Entries selected by [deferUntilEnd] still download concurrently but are not
 /// processed until every other entry has completed. This keeps app installs
@@ -415,64 +429,95 @@ extension AppsProviderInstall on AppsProvider {
         downloadUrl,
         forAPKDownload: true,
       );
-      var downloadedFile = await downloadFileWithRetry(
-        downloadUrl,
-        fileNameNoExt,
-        source.urlsAlwaysHaveExtension,
-        headers: headers,
-        (double? progress, [int? received, int? total]) {
-          final int? prog = progress?.ceil();
-          if (apps[app.id] != null) {
-            apps[app.id]!.downloadReceivedBytes = received;
-            apps[app.id]!.downloadTotalBytes = total;
-            apps[app.id]!.downloadProgress = progress;
-            // Only rebuild listeners when the displayed (integer) percent
-            // actually changes, to avoid redundant whole-page rebuilds on
-            // every sub-percent download tick.
-            if (prevProg != prog) {
-              notify();
-            }
+      void updateDownloadProgress(
+        double? progress, [
+        int? received,
+        int? total,
+      ]) {
+        final int? prog = progress?.ceil();
+        if (apps[app.id] != null) {
+          apps[app.id]!.downloadReceivedBytes = received;
+          apps[app.id]!.downloadTotalBytes = total;
+          apps[app.id]!.downloadProgress = progress;
+          // Only rebuild listeners when the displayed (integer) percent
+          // actually changes, to avoid redundant whole-page rebuilds on
+          // every sub-percent download tick.
+          if (prevProg != prog) {
+            notify();
           }
-          notif = DownloadNotification(
-            app.finalName,
-            prog ?? _downloadCompleteProgress,
-            // Only foreground downloads are cancellable from the notification;
-            // the background isolate's token isn't reachable from the main
-            // isolate that handles the action tap.
-            appId: isBg ? null : app.id,
-            receivedBytes: received,
-            totalBytes: total,
-          );
-          if (prog != null &&
-              (prevProg == null ||
-                  (prog - prevProg!).abs() >= 5 ||
-                  prog == 100)) {
-            if (nativeDownloadServiceStarted) {
-              unawaited(
-                NativeFeatures.showDownloadProgressNotification(
-                  id: notif.id,
-                  appId: app.id,
-                  title: notif.title,
-                  message: notif.message,
-                  channelCode: notif.channelCode,
-                  progressPercent: prog,
-                  indeterminate: false,
-                  cancelLabel: tr('cancel'),
-                  shortCriticalText: '$prog%',
-                ),
-              );
-            } else {
-              unawaited(notificationsProvider?.notify(notif));
-            }
-            prevProg = prog;
+        }
+        notif = DownloadNotification(
+          app.finalName,
+          prog ?? _downloadCompleteProgress,
+          // Only foreground downloads are cancellable from the notification;
+          // the background isolate's token isn't reachable from the main
+          // isolate that handles the action tap.
+          appId: isBg ? null : app.id,
+          receivedBytes: received,
+          totalBytes: total,
+        );
+        if (prog != null &&
+            (prevProg == null ||
+                (prog - prevProg!).abs() >= 5 ||
+                prog == 100)) {
+          if (nativeDownloadServiceStarted) {
+            unawaited(
+              NativeFeatures.showDownloadProgressNotification(
+                id: notif.id,
+                appId: app.id,
+                title: notif.title,
+                message: notif.message,
+                channelCode: notif.channelCode,
+                progressPercent: prog,
+                indeterminate: false,
+                cancelLabel: tr('cancel'),
+                shortCriticalText: '$prog%',
+              ),
+            );
+          } else {
+            unawaited(notificationsProvider?.notify(notif));
           }
-        },
-        this.apkDir.path,
-        useExisting: useExisting,
-        allowInsecure: app.settings.getBool('allowInsecure'),
-        logs: logs,
-        cancellationToken: cancellationToken,
-      );
+          prevProg = prog;
+        }
+      }
+
+      Future<File> runDownload(Map<String, String>? requestHeaders) {
+        return downloadFileWithRetry(
+          downloadUrl,
+          fileNameNoExt,
+          source.urlsAlwaysHaveExtension,
+          updateDownloadProgress,
+          this.apkDir.path,
+          useExisting: useExisting,
+          headers: requestHeaders,
+          allowInsecure: app.settings.getBool('allowInsecure'),
+          logs: logs,
+          cancellationToken: cancellationToken,
+        );
+      }
+
+      File downloadedFile;
+      try {
+        downloadedFile = await runDownload(headers);
+      } catch (error) {
+        if (!shouldRetryGitHubDownloadWithoutAuthorization(
+          source: source,
+          headers: headers,
+          error: error,
+        )) {
+          rethrow;
+        }
+        final Map<String, String> unauthenticatedHeaders =
+            Map<String, String>.from(headers!)
+              ..remove(HttpHeaders.authorizationHeader);
+        unawaited(
+          logs.add(
+            'GitHub asset download returned 401 with stored PAT. Retrying without authentication.',
+            level: LogLevel.warning,
+          ),
+        );
+        downloadedFile = await runDownload(unauthenticatedHeaders);
+      }
       if (apps[app.id] != null) {
         apps[app.id]!.downloadProgress = _remainingStepsProgress.toDouble();
         notify();
