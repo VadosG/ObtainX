@@ -597,7 +597,7 @@
     "appTypeSystem": "システムアプリ",
     "appTypePrivileged": "特権アプリ",
     "appType": "アプリの種類",
-    "showBadges": "バッジを表示",
+    "showInfo": "情報を表示",
     "showAppTypeBadge": "アプリの種類",
     "showTrackedStoreBadge": "追跡中のストア",
     "showCategoriesBadge": "カテゴリ",

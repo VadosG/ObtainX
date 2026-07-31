@@ -817,6 +817,24 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get showAuthorBadge {
+    return prefs?.getBool('showAuthorBadge') ?? true;
+  }
+
+  set showAuthorBadge(bool value) {
+    prefs?.setBool('showAuthorBadge', value);
+    notifyListeners();
+  }
+
+  bool get showVersionBadge {
+    return prefs?.getBool('showVersionBadge') ?? true;
+  }
+
+  set showVersionBadge(bool value) {
+    prefs?.setBool('showVersionBadge', value);
+    notifyListeners();
+  }
+
   int get updateInterval {
     return prefs?.getInt('updateInterval') ?? 360;
   }

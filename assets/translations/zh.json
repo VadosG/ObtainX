@@ -578,7 +578,7 @@
     "appTypeSystem": "系统应用",
     "appTypePrivileged": "特权应用",
     "appType": "应用类型",
-    "showBadges": "显示徽章",
+    "showInfo": "显示信息",
     "showAppTypeBadge": "应用类型",
     "showTrackedStoreBadge": "追踪商店",
     "showCategoriesBadge": "类别",

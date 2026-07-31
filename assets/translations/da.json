@@ -573,7 +573,6 @@
     "appTypeSystem": "System Apps",
     "appTypePrivileged": "Privileged Apps",
     "appType": "App Type",
-    "showBadges": "Show badges",
     "showAppTypeBadge": "App type",
     "showTrackedStoreBadge": "Tracked store",
     "showCategoriesBadge": "Categories",

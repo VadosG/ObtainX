@@ -588,7 +588,7 @@
     "appTypeSystem": "Applications système",
     "appTypePrivileged": "Applications privilégiées",
     "appType": "Type d'application",
-    "showBadges": "Afficher les badges",
+    "showInfo": "Afficher les informations",
     "showAppTypeBadge": "Type d'application",
     "showTrackedStoreBadge": "Magasin suivi",
     "showCategoriesBadge": "Catégories",

@@ -588,7 +588,7 @@
     "appTypeSystem": "Системные",
     "appTypePrivileged": "Привилегированные",
     "appType": "Тип приложения",
-    "showBadges": "Показывать значки",
+    "showInfo": "Показывать информацию",
     "showAppTypeBadge": "Тип приложения",
     "showTrackedStoreBadge": "Отслеживаемый магазин",
     "showCategoriesBadge": "Категории",

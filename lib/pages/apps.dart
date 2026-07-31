@@ -716,6 +716,8 @@ class _AppListItem extends StatelessWidget {
     required this.showAppTypeBadge,
     required this.showTrackedStoreBadge,
     required this.showCategoriesBadge,
+    required this.showAuthorBadge,
+    required this.showVersionBadge,
     required this.showCheckmark,
     this.sourceHost,
     this.itemBorderRadius,
@@ -733,6 +735,8 @@ class _AppListItem extends StatelessWidget {
   final bool showAppTypeBadge;
   final bool showTrackedStoreBadge;
   final bool showCategoriesBadge;
+  final bool showAuthorBadge;
+  final bool showVersionBadge;
   final String? sourceHost;
   final BorderRadius? itemBorderRadius;
   final bool showCheckmark;
@@ -875,7 +879,9 @@ class _AppListItem extends StatelessWidget {
         (!skipActive && hasUpdate) ||
         (!skipActive && !hasUpdate && hasUncertainUpdate);
 
-    final Widget? trailingRow = (hideVersionAndChangelog && !hasTrailingWidgets)
+    final bool showVersionColumn = !hideVersionAndChangelog && showVersionBadge;
+
+    final Widget? trailingRow = (!showVersionColumn && !hasTrailingWidgets)
         ? null
         : ConstrainedBox(
             // ListTile measures trailing before title/subtitle. Bound the
@@ -886,7 +892,7 @@ class _AppListItem extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                if (!hideVersionAndChangelog)
+                if (showVersionColumn)
                   Flexible(
                     child: GestureDetector(
                       onTap: showChangesFn,
@@ -937,7 +943,7 @@ class _AppListItem extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (!hideVersionAndChangelog && hasTrailingWidgets)
+                if (showVersionColumn && hasTrailingWidgets)
                   const SizedBox(width: 5),
                 if (skipActive) buildSkippedVersionIcon(),
                 if (!skipActive && hasUpdate) buildUpdateButton(),
@@ -1217,14 +1223,16 @@ class _AppListItem extends StatelessWidget {
                       ),
                     ],
                   ),
-                  subtitle: Text(
-                    tr('byX', args: [app.author]),
-                    maxLines: 1,
-                    style: TextStyle(
-                      overflow: TextOverflow.ellipsis,
-                      fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
+                  subtitle: showAuthorBadge
+                      ? Text(
+                          tr('byX', args: [app.author]),
+                          maxLines: 1,
+                          style: TextStyle(
+                            overflow: TextOverflow.ellipsis,
+                            fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        )
+                      : null,
                   trailing: downloadProgress != null
                       ? buildDownloadProgressControl()
                       : trailingRow,
@@ -2213,7 +2221,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  sectionLabel(tr('showBadges')),
+                  sectionLabel(tr('showInfo')),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -2245,6 +2253,26 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                         selected: settingsProvider.showCategoriesBadge,
                         onSelected: (value) {
                           settingsProvider.showCategoriesBadge = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      FilterChip(
+                        avatar: const Icon(Icons.badge_rounded, size: 16),
+                        showCheckmark: false,
+                        label: Text(tr('showAuthorBadge')),
+                        selected: settingsProvider.showAuthorBadge,
+                        onSelected: (value) {
+                          settingsProvider.showAuthorBadge = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      FilterChip(
+                        avatar: const Icon(Icons.sell_rounded, size: 16),
+                        showCheckmark: false,
+                        label: Text(tr('showVersionBadge')),
+                        selected: settingsProvider.showVersionBadge,
+                        onSelected: (value) {
+                          settingsProvider.showVersionBadge = value;
                           setSheetState(() {});
                         },
                       ),
@@ -3335,6 +3363,8 @@ class AppsPageState extends State<AppsPage> {
         s.showAppTypeBadge,
         s.showTrackedStoreBadge,
         s.showCategoriesBadge,
+        s.showAuthorBadge,
+        s.showVersionBadge,
         s.highlightTouchTargets,
         s.progressiveBlurEnabled,
         s.reduceVisualEffects,
@@ -4518,6 +4548,8 @@ class AppsPageState extends State<AppsPage> {
           showAppTypeBadge: settingsProvider.showAppTypeBadge,
           showTrackedStoreBadge: settingsProvider.showTrackedStoreBadge,
           showCategoriesBadge: settingsProvider.showCategoriesBadge,
+          showAuthorBadge: settingsProvider.showAuthorBadge,
+          showVersionBadge: settingsProvider.showVersionBadge,
           onTap: selectedAppIds.isNotEmpty
               ? () => toggleAppSelected(app.app)
               : navigateToAppPage,

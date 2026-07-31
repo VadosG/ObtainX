@@ -453,6 +453,8 @@ const Set<String> obtainXOnlySettingKeys = {
   'showAppTypeBadge',
   'showTrackedStoreBadge',
   'showCategoriesBadge',
+  'showAuthorBadge',
+  'showVersionBadge',
   'saveDownloadedApkCopies',
   'apkSaveDir',
   'rightSwipeAction',
