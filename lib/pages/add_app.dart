@@ -1426,7 +1426,7 @@ class AddAppPageState extends State<AddAppPage> {
             throw ObtainiumError(tr('appAlreadyAdded'));
           }
           app.additionalSettings['useVersionCodeAsOSVersion'] =
-              app.additionalSettings['versionDetection'] == 'versionCode';
+              app.versionDetectionMode == VersionDetectionMode.versionCode;
           if (app.additionalSettings['trackOnly'] == true) {
             app = app.copyWith(installedVersion: null);
             if (isTempId(app)) {
@@ -1441,9 +1441,7 @@ class AddAppPageState extends State<AddAppPage> {
               );
               if (installedInfo != null) {
                 app = app.copyWith(
-                  installedVersion:
-                      app.additionalSettings['useVersionCodeAsOSVersion'] ==
-                          true
+                  installedVersion: app.usesVersionCodeAsOsVersion
                       ? installedInfo.versionCode.toString()
                       : installedInfo.versionName,
                 );
@@ -1454,8 +1452,7 @@ class AddAppPageState extends State<AddAppPage> {
                     true;
               }
             }
-          } else if (app.additionalSettings['versionDetection'] == 'pseudo' ||
-              app.additionalSettings['versionDetection'] == false) {
+          } else if (!app.usesStandardVersionDetection) {
             app = app.copyWith(installedVersion: app.latestVersion);
           }
           app = app.copyWith(categories: pickedCategories);

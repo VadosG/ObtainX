@@ -11,6 +11,8 @@ import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/app_sources/izzyondroid.dart';
+import 'package:obtainium/app_sources/html.dart';
+import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:http/http.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -59,12 +61,16 @@ class _StubSource extends AppSource {
     this.apkUrls = const <MapEntry<String, String>>[
       MapEntry('example.apk', 'https://example.com/example.apk'),
     ],
+    this.version = '2.0',
+    this.versionCode,
   }) {
     hosts = <String>['example.com'];
     name = 'Example';
   }
 
   final List<MapEntry<String, String>> apkUrls;
+  final String version;
+  final int? versionCode;
 
   @override
   String sourceSpecificStandardizeURL(String url, {bool forSelection = false}) {
@@ -77,9 +83,10 @@ class _StubSource extends AppSource {
     Map<String, dynamic> additionalSettings,
   ) async {
     return APKDetails(
-      '2.0',
+      version,
       apkUrls,
       AppNames('Example Author', 'Readable Name'),
+      versionCode: versionCode,
     );
   }
 
@@ -1111,6 +1118,56 @@ void main() {
       final reqMap = requestHeaders.first as Map<String, dynamic>;
       expect(reqMap.containsKey('requestHeader'), true);
       expect(reqMap['requestHeader'], contains('Mozilla/5.0'));
+    },
+  );
+
+  test(
+    'version-code mode stores the source version code as the latest version',
+    () async {
+      // The installed version in this mode is the device's versionCode, so the
+      // latest version has to be a code too — otherwise the two are unorderable.
+      final source = _StubSource(version: '4.8.3', versionCode: 48300);
+      final app = await SourceProvider()
+          .getApp(source, 'https://example.com/app', <String, dynamic>{
+            'appId': 'org.example.app',
+            'versionDetection': 'versionCode',
+            'useVersionCodeAsOSVersion': true,
+          });
+
+      expect(app.latestVersion, '48300');
+      // The source's own string is still kept for the RegEx assist helpers.
+      expect(app.rawLatestVersionFromSource, '4.8.3');
+    },
+  );
+
+  test(
+    'version-code mode leaves the version string alone without a source code',
+    () async {
+      final source = _StubSource(version: '4.8.3');
+      final app = await SourceProvider()
+          .getApp(source, 'https://example.com/app', <String, dynamic>{
+            'appId': 'org.example.app',
+            'versionDetection': 'versionCode',
+            'useVersionCodeAsOSVersion': true,
+          });
+
+      expect(app.latestVersion, '4.8.3');
+    },
+  );
+
+  test(
+    'an explicit version-string source outranks version-code mode',
+    () async {
+      final source = _StubSource(version: '4.8.3', versionCode: 48300);
+      final app = await SourceProvider()
+          .getApp(source, 'https://example.com/app', <String, dynamic>{
+            'appId': 'org.example.app',
+            'versionDetection': 'versionCode',
+            'useVersionCodeAsOSVersion': true,
+            'versionStringSource': versionStringSourceReleaseTitle,
+          });
+
+      expect(app.latestVersion, '4.8.3');
     },
   );
 }

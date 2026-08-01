@@ -178,8 +178,8 @@ class GitLab extends AppSource {
         if (rel is Map<String, dynamic>) {
           final String? title =
               (rel['name'] as String?)?.trim().isNotEmpty == true
-                  ? (rel['name'] as String).trim()
-                  : (rel['tag_name'] as String?)?.trim();
+              ? (rel['name'] as String).trim()
+              : (rel['tag_name'] as String?)?.trim();
           if (title != null &&
               title.isNotEmpty &&
               !rawReleaseTitleCandidates.contains(title)) {

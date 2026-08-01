@@ -7,7 +7,6 @@ import 'dart:ui' show PlatformDispatcher;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/locale_resolution.dart';
 import 'package:obtainium/main.dart';
@@ -15,6 +14,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/folders/app_folder.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -902,14 +902,17 @@ class SettingsProvider with ChangeNotifier {
     return false;
   }
 
-  Future<bool> getInstallPermission({bool enforce = false}) async {
+  Future<bool> getInstallPermission({
+    bool enforce = false,
+    ThemeData? toastTheme,
+  }) async {
     while (!(await Permission.requestInstallPackages.isGranted)) {
       // Explicit request as InstallPlugin request sometimes bugged
-      unawaited(
-        Fluttertoast.showToast(
-          msg: tr('pleaseAllowInstallPerm'),
-          toastLength: Toast.LENGTH_LONG,
-        ),
+      showAppToast(
+        tr('pleaseAllowInstallPerm'),
+        type: ToastType.warning,
+        duration: const Duration(seconds: 4),
+        theme: toastTheme,
       );
       if ((await Permission.requestInstallPackages.request()) ==
           PermissionStatus.granted) {
@@ -1571,7 +1574,7 @@ class SettingsProvider with ChangeNotifier {
       _lastApkSaveDirAccessWarningAt = now;
     }
 
-    Fluttertoast.showToast(msg: tr('storagePermissionDenied'));
+    showAppToast(tr('storagePermissionDenied'), type: ToastType.error);
   }
 
   /// When true (and an APK save folder is set), copies of downloaded APKs are

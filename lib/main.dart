@@ -4,6 +4,7 @@ import 'dart:ui' show PlatformDispatcher, PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:obtainium/app_distribution.dart';
 import 'package:obtainium/app_ui_scaling.dart';
 import 'package:obtainium/pages/home.dart';
@@ -19,6 +20,7 @@ import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -862,16 +864,21 @@ class _ObtainiumState extends State<Obtainium> with WidgetsBindingObserver {
             // custom app scale uses a bounded linear approximation.
             builder: (BuildContext context, Widget? child) {
               final MediaQueryData mq = MediaQuery.of(context);
-              return MediaQuery(
-                data: mq.copyWith(
-                  textScaler: cappedAppTextScaler(
-                    systemTextScaler: mq.textScaler,
-                    userScale: settingsProvider.appUiScale,
-                    minimumEffectiveScale: SettingsProvider.appUiScaleMin,
-                    maximumEffectiveScale: SettingsProvider.appUiScaleMax,
+              return FToastBuilder()(
+                context,
+                AppToastHost(
+                  child: MediaQuery(
+                    data: mq.copyWith(
+                      textScaler: cappedAppTextScaler(
+                        systemTextScaler: mq.textScaler,
+                        userScale: settingsProvider.appUiScale,
+                        minimumEffectiveScale: SettingsProvider.appUiScaleMin,
+                        maximumEffectiveScale: SettingsProvider.appUiScaleMax,
+                      ),
+                    ),
+                    child: child ?? const SizedBox.shrink(),
                   ),
                 ),
-                child: child ?? const SizedBox.shrink(),
               );
             },
             // Best-of-both M3E theme, built and memoized by

@@ -252,7 +252,7 @@ extension AppsProviderImportExport on AppsProvider {
       final a = importedApps[i];
       final installedInfo = await getInstalledInfo(a.id);
       importedApps[i] = a.copyWith(
-        installedVersion: a.settings.getBool('useVersionCodeAsOSVersion')
+        installedVersion: a.usesVersionCodeAsOsVersion
             ? installedInfo?.versionCode.toString()
             : installedInfo?.versionName,
       );

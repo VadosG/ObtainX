@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart' show Listenable, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/github.dart';
@@ -23,6 +22,7 @@ import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_page_icon_colors.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/date_time_format.dart';
 import 'package:obtainium/main.dart';
@@ -66,7 +66,7 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
   if (installedInfo == null) {
     return false;
   }
-  final String? realInstalledVersion = _usesVersionCodeAsOsVersion(appModel)
+  final String? realInstalledVersion = appModel.usesVersionCodeAsOsVersion
       ? installedInfo.versionCode.toString()
       : installedInfo.versionName;
   if (realInstalledVersion == null || realInstalledVersion.isEmpty) {
@@ -78,19 +78,14 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
   );
 }
 
-bool _usesVersionCodeAsOsVersion(App appModel) {
-  return appModel.additionalSettings['useVersionCodeAsOSVersion'] == true ||
-      appModel.additionalSettings['versionDetection'] == 'versionCode';
-}
-
 /// The real OS-reported installed version (versionName, or versionCode when the
-/// app uses useVersionCodeAsOSVersion). Null when nothing is installed. Surfaced
-/// on the app page only when the displayed version is a pseudo-version, so the
-/// user can still see what's actually installed.
+/// app uses [App.usesVersionCodeAsOsVersion]). Null when nothing is installed.
+/// Surfaced on the app page only when the displayed version is a pseudo-version,
+/// so the user can still see what's actually installed.
 String? _realOsInstalledVersion(AppInMemory appInMemory) {
   final installedInfo = appInMemory.installedInfo;
   if (installedInfo == null) return null;
-  return _usesVersionCodeAsOsVersion(appInMemory.app)
+  return appInMemory.app.usesVersionCodeAsOsVersion
       ? installedInfo.versionCode.toString()
       : installedInfo.versionName;
 }
@@ -218,11 +213,13 @@ Future<String?> _checkPlayStoreAvailability(String packageId) async {
   return null;
 }
 
-void _toastUrl(String url) {
-  Fluttertoast.showToast(
-    msg: url,
-    toastLength: Toast.LENGTH_LONG,
-    timeInSecForIosWeb: 5,
+void _toastUrl(BuildContext context, String url) {
+  showAppToast(
+    url,
+    context: context,
+    icon: Icons.link_rounded,
+    type: ToastType.info,
+    duration: const Duration(seconds: 4),
   );
 }
 
@@ -2090,7 +2087,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
       child: InkWell(
         onTap: () => launchUrlString(url, mode: LaunchMode.externalApplication),
         onLongPress: () {
-          _toastUrl(url);
+          _toastUrl(iconContext, url);
           Clipboard.setData(ClipboardData(text: url));
         },
         borderRadius: BorderRadius.circular(12),
@@ -2301,12 +2298,10 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
     }
     final trackOnly = app?.app.additionalSettings['trackOnly'] == true;
 
+    // Defaults to true when there is no app yet, as the old inline chain did
+    // (its `== null` arm matched a null app).
     final bool isVersionDetectionStandard =
-        app?.app.additionalSettings['versionDetection'] == 'auto' ||
-        app?.app.additionalSettings['versionDetection'] == 'standard' ||
-        app?.app.additionalSettings['versionDetection'] == 'versionCode' ||
-        app?.app.additionalSettings['versionDetection'] == true ||
-        app?.app.additionalSettings['versionDetection'] == null;
+        app?.app.usesStandardVersionDetection ?? true;
 
     if (showAppWebpageFinal) {
       _webViewTopInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
@@ -3429,7 +3424,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
               tr('installed'),
               app?.app.installedVersion ?? '',
               pseudoVersion: app != null && _isInstalledVersionPseudo(app),
-              versionCode: app != null && _usesVersionCodeAsOsVersion(app.app),
+              versionCode: app != null && app.app.usesVersionCodeAsOsVersion,
               osInstalledVersion: app == null
                   ? null
                   : _realOsInstalledVersion(app),

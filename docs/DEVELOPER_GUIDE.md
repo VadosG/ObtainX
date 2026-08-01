@@ -228,7 +228,10 @@ Override the contract methods you need:
 - **Two-pane** list+detail on very wide screens (`width >= 900`) for the Apps tab.
 - Single-pane content on wide screens is **width-capped at 720px** and centered.
 - Update count is shown as a live `Badge` driven by
-  `context.select<AppsProvider>(...findAppIdsWithPendingUpdates...)`.
+  `context.select<AppsProvider>(...)` over `AppsProvider.pendingUpdateCount`, which is
+  backed by `findExistingUpdates(installedOnly: true, excludeOnDemandOnly: true,
+  includeVersionOrderUncertain: true)` — i.e. the same verdict the app list renders,
+  not a raw `installedVersion != latestVersion` compare.
 - Only **two tabs** (Apps, Settings). "Add App" is a FAB; Import/Export are folded into
   the Add App page and Settings respectively.
 

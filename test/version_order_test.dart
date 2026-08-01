@@ -1177,4 +1177,343 @@ This app description should not be included.
       );
     },
   );
+
+  test('install status reconciliation converges to a fixed point', () {
+    // getCorrectedInstallStatusAppIfPossible is applied on every load and save, so
+    // it has to settle: if pass N keeps producing a different app, the JSON is
+    // rewritten forever and the recorded install state depends on how many times
+    // the app list happened to refresh. (It is not idempotent after one pass —
+    // flipping to pseudo in step 4 legitimately lets step 1b adopt the device
+    // version on the next pass — so the property is convergence, not idempotence.)
+    final appsProvider = AppsProvider(isBg: true);
+    addTearDown(appsProvider.dispose);
+
+    const List<List<String>> cases = <List<String>>[
+      <String>['1.2.3', '1.2.4', '1.2.3'],
+      <String>['153.0', '153.0.2', '153.0'],
+      <String>[
+        '1.0.896819557.release',
+        '1.0.915254043.release',
+        '1.0.896819557.release',
+      ],
+      <String>['26.06.9df4c85', '26.06.8df31d', '26.06.9df4c85'],
+      <String>['106', '107', '9.18.50'],
+      <String>['1.2', '1.2.0', '1.2'],
+      <String>['2.0', '2.1', '451'],
+    ];
+
+    for (final List<String> testCase in cases) {
+      final String installed = testCase[0];
+      final String latest = testCase[1];
+      final String deviceVersion = testCase[2];
+      for (final String mode in <String>[
+        'auto',
+        'standard',
+        'pseudo',
+        'versionCode',
+      ]) {
+        App app = App(
+          id: 'app.example',
+          url: 'https://github.com/example/example',
+          author: 'example',
+          name: 'example',
+          installedVersion: installed,
+          latestVersion: latest,
+          apkUrls: const <MapEntry<String, String>>[],
+          preferredApkIndex: 0,
+          additionalSettings: <String, dynamic>{'versionDetection': mode},
+          lastUpdateCheck: DateTime.now(),
+          pinned: false,
+        );
+        final info = FakePackageInfo(
+          packageName: 'app.example',
+          versionName: deviceVersion,
+          versionCode: 451,
+        );
+
+        var passes = 0;
+        while (passes < 6) {
+          final App? corrected = appsProvider
+              .getCorrectedInstallStatusAppIfPossible(app, info);
+          if (corrected == null) break;
+          app = corrected;
+          passes++;
+        }
+        expect(
+          passes,
+          lessThan(6),
+          reason:
+              'no fixed point for ($installed → $latest, device $deviceVersion) in $mode',
+        );
+      }
+    }
+  });
+
+  // Regression: version reconciliation must have exactly one implementation.
+  // A second copy used to exist as an extension member on AppsProvider, which
+  // shadowed the top-level function for every production caller and lacked the
+  // shape fallback, so `.release`-style versions came back unreconcilable.
+  test('reconciliation relates shape-identical non-standard versions', () {
+    const installed = '1.0.896819557.release';
+    const latest = '1.0.915254043.release';
+
+    final reconciled = reconcileVersionDifferences(installed, latest);
+    expect(reconciled, isNotNull);
+    expect(reconciled!.areEqual, false);
+    expect(reconciled.version, installed);
+
+    // Same for Google-style long release versions.
+    final google = reconcileVersionDifferences(
+      '2026.03.12.885261117.2-release',
+      '2026.04.27.917519149.2-release',
+    );
+    expect(google?.areEqual, false);
+  });
+
+  test(
+    'auto detection survives non-standard release suffixes instead of going pseudo',
+    () {
+      final appsProvider = AppsProvider(isBg: true);
+      addTearDown(appsProvider.dispose);
+      const installed = '1.0.896819557.release';
+      const latest = '1.0.915254043.release';
+      final app = App(
+        id: 'com.example.release',
+        // A source WITHOUT naiveStandardVersionDetection, so reconciliation is
+        // the only thing keeping version detection alive.
+        url: 'https://github.com/example/release-suffix',
+        author: 'example',
+        name: 'Release Suffix',
+        installedVersion: installed,
+        latestVersion: latest,
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+      const info = FakePackageInfo(
+        packageName: 'com.example.release',
+        versionName: installed,
+        versionCode: 896819557,
+      );
+
+      expect(
+        appsProvider.isVersionDetectionPossible(
+          AppInMemory(app, null, info, null),
+        ),
+        true,
+      );
+      expect(appHasActionableUpdate(app), true);
+
+      final App? corrected = appsProvider
+          .getCorrectedInstallStatusAppIfPossible(app, info);
+      final App effective = corrected ?? app;
+
+      // The pending update must survive reconciliation: no flip to pseudo, no
+      // rewriting installedVersion to the release that was never installed.
+      expect(effective.additionalSettings['versionDetection'], 'auto');
+      expect(effective.installedVersion, installed);
+      expect(appHasActionableUpdate(effective), true);
+    },
+  );
+
+  test('version detection mode parses every stored encoding', () {
+    expect(VersionDetectionMode.fromStored('auto'), VersionDetectionMode.auto);
+    expect(
+      VersionDetectionMode.fromStored('standard'),
+      VersionDetectionMode.standard,
+    );
+    expect(
+      VersionDetectionMode.fromStored('pseudo'),
+      VersionDetectionMode.pseudo,
+    );
+    expect(
+      VersionDetectionMode.fromStored('versionCode'),
+      VersionDetectionMode.versionCode,
+    );
+    // Legacy encodings still reachable when App.fromJson falls back to
+    // unmigrated JSON.
+    expect(VersionDetectionMode.fromStored(null), VersionDetectionMode.auto);
+    expect(VersionDetectionMode.fromStored(true), VersionDetectionMode.auto);
+    expect(VersionDetectionMode.fromStored(false), VersionDetectionMode.pseudo);
+    expect(
+      VersionDetectionMode.fromStored('standardVersionDetection'),
+      VersionDetectionMode.auto,
+    );
+    expect(
+      VersionDetectionMode.fromStored('noVersionDetection'),
+      VersionDetectionMode.pseudo,
+    );
+    expect(
+      VersionDetectionMode.fromStored('releaseDateAsVersion'),
+      VersionDetectionMode.pseudo,
+    );
+  });
+
+  test(
+    'version-code mode is read from either the mode or its derived bool',
+    () {
+      App app(Map<String, dynamic> settings) => App(
+        id: 'app.example',
+        url: 'https://github.com/example/example',
+        author: 'example',
+        name: 'example',
+        installedVersion: '123',
+        latestVersion: '124',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: settings,
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      // Both signals in sync.
+      expect(
+        app(const {
+          'versionDetection': 'versionCode',
+          'useVersionCodeAsOSVersion': true,
+        }).usesVersionCodeAsOsVersion,
+        true,
+      );
+      // Out of sync in either direction still means version-code mode, so the
+      // displayed version and install-status reconciliation cannot disagree.
+      expect(
+        app(const {
+          'versionDetection': 'versionCode',
+        }).usesVersionCodeAsOsVersion,
+        true,
+      );
+      expect(
+        app(const {
+          'versionDetection': 'auto',
+          'useVersionCodeAsOSVersion': true,
+        }).usesVersionCodeAsOsVersion,
+        true,
+      );
+      expect(
+        app(const {'versionDetection': 'auto'}).usesVersionCodeAsOsVersion,
+        false,
+      );
+    },
+  );
+
+  test(
+    'normalizing version detection settings keeps the derived bool honest',
+    () {
+      // Stored settings: a stale boolean pulls the mode to versionCode.
+      final stored = <String, dynamic>{
+        'versionDetection': 'auto',
+        'useVersionCodeAsOSVersion': true,
+      };
+      normalizeVersionDetectionSettings(stored, promoteLegacyBoolean: true);
+      expect(stored['versionDetection'], 'versionCode');
+      expect(stored['useVersionCodeAsOSVersion'], true);
+
+      // Post-form-merge: the dropdown wins, so the user can leave versionCode mode
+      // even though the stale boolean is still in the map.
+      final edited = <String, dynamic>{
+        'versionDetection': 'auto',
+        'useVersionCodeAsOSVersion': true,
+      };
+      normalizeVersionDetectionSettings(edited);
+      expect(edited['versionDetection'], 'auto');
+      expect(edited['useVersionCodeAsOSVersion'], false);
+
+      // Legacy bools are canonicalised to mode keys, never left as bools.
+      final legacy = <String, dynamic>{'versionDetection': false};
+      normalizeVersionDetectionSettings(legacy);
+      expect(legacy['versionDetection'], 'pseudo');
+    },
+  );
+
+  test(
+    'version-code mode never reports a version code as newer than a version',
+    () {
+      App app({required String installed, required String latest}) => App(
+        id: 'app.example',
+        url: 'https://github.com/example/example',
+        author: 'example',
+        name: 'example',
+        installedVersion: installed,
+        latestVersion: latest,
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: const <String, dynamic>{
+          'versionDetection': 'versionCode',
+          'useVersionCodeAsOSVersion': true,
+        },
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      // The broken case: device versionCode 123 vs a source semver. Digit-wise
+      // ordering used to make this "installed is newer" — up to date forever.
+      final mismatched = app(installed: '123', latest: '1.2.4');
+      expect(versionCodeModeCannotCompare(mismatched), true);
+      expect(appIsUpToDateForFiltering(mismatched), false);
+      // Unorderable, so: visible to the user, but never auto-installed.
+      expect(versionOrderUncertainUpdate(mismatched), true);
+      expect(appHasActionableUpdate(mismatched), false);
+      expect(appUpdateIsUserVisible(mismatched), false);
+      expect(
+        appUpdateIsUserVisible(mismatched, includeVersionOrderUncertain: true),
+        true,
+      );
+
+      // Correctly configured: source publishes version codes too, so ordering works.
+      final ordered = app(installed: '123', latest: '124');
+      expect(versionCodeModeCannotCompare(ordered), false);
+      expect(appHasActionableUpdate(ordered), true);
+      expect(appIsUpToDateForFiltering(ordered), false);
+
+      final upToDate = app(installed: '124', latest: '124');
+      expect(appHasActionableUpdate(upToDate), false);
+      expect(appIsUpToDateForFiltering(upToDate), true);
+    },
+  );
+
+  test('appUpdateIsUserVisible agrees with the list UI, not with string diffs', () {
+    App app({
+      String? installed = '1.2.3',
+      String latest = '1.2.4',
+      Map<String, dynamic> settings = const <String, dynamic>{},
+    }) => App(
+      id: 'app.example',
+      url: 'https://github.com/example/example',
+      author: 'example',
+      name: 'example',
+      installedVersion: installed,
+      latestVersion: latest,
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: settings,
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    // Genuinely behind.
+    expect(appUpdateIsUserVisible(app()), true);
+    // Version string changed but denotes the same build (build-metadata suffix).
+    expect(appUpdateIsUserVisible(app(latest: '1.2.3-2')), false);
+    // Source published something older than what is installed.
+    expect(appUpdateIsUserVisible(app(latest: '1.1.0')), false);
+    // User skipped this exact release.
+    expect(
+      appUpdateIsUserVisible(
+        app(settings: const {'skippedLatestVersion': '1.2.4'}),
+      ),
+      false,
+    );
+    // Never installed: still installable.
+    expect(appUpdateIsUserVisible(app(installed: null)), true);
+    // Ambiguous ordering: notifications surface it, background install must not.
+    final ambiguous = app(installed: '26.06.9df4c85', latest: '26.06.8df31d');
+    expect(versionOrderUncertainUpdate(ambiguous), true);
+    expect(appUpdateIsUserVisible(ambiguous), false);
+    expect(
+      appUpdateIsUserVisible(ambiguous, includeVersionOrderUncertain: true),
+      true,
+    );
+  });
 }

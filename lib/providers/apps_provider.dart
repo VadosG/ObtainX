@@ -183,143 +183,6 @@ class DownloadedDir {
   DownloadedDir(this.appId, this.file, this.extracted, this.type);
 }
 
-/// Delegates to [VersionService.findStandardFormatsForVersion].
-Set<String> findStandardFormatsForVersion(String version, bool strict) =>
-    VersionService().findStandardFormatsForVersion(version, strict);
-
-/// Returns whether two plain dotted-numeric versions are equal after padding
-/// missing trailing segments with zero. Returns null when either version uses a
-/// different format.
-bool? dottedNumericVersionsAreEqual(String firstVersion, String secondVersion) {
-  final List<List<int>> parsedVersions = <List<int>>[];
-  for (final String version in <String>[firstVersion, secondVersion]) {
-    final List<String> segments = version.trim().split('.');
-    if (segments.length < 2) {
-      return null;
-    }
-    final List<int> numericSegments = <int>[];
-    for (final String segment in segments) {
-      if (segment.isEmpty ||
-          segment.codeUnits.any(
-            (int codeUnit) => codeUnit < 0x30 || codeUnit > 0x39,
-          )) {
-        return null;
-      }
-      final int? numericSegment = int.tryParse(segment);
-      if (numericSegment == null) {
-        return null;
-      }
-      numericSegments.add(numericSegment);
-    }
-    parsedVersions.add(numericSegments);
-  }
-
-  final List<int> firstSegments = parsedVersions[0];
-  final List<int> secondSegments = parsedVersions[1];
-  final int segmentCount = max(firstSegments.length, secondSegments.length);
-  for (int segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++) {
-    final int firstSegment = segmentIndex < firstSegments.length
-        ? firstSegments[segmentIndex]
-        : 0;
-    final int secondSegment = segmentIndex < secondSegments.length
-        ? secondSegments[segmentIndex]
-        : 0;
-    if (firstSegment != secondSegment) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Version reconciliation helpers (fork feature) used by additional_options and
-// pseudo-version handling. [doStringsMatchUnderRegEx] already lives elsewhere.
-MapEntry<bool, String>? reconcileVersionDifferences(
-  String templateVersion,
-  String comparisonVersion,
-) {
-  // Returns null if the versions don't share a common standard format
-  // Returns <true, comparisonVersion> if they share a common format and are equal
-  // Returns <false, templateVersion> if they share a common format but are not equal
-  final templateVersionFormats = findStandardFormatsForVersion(
-    templateVersion,
-    true,
-  );
-  var comparisonVersionFormats = findStandardFormatsForVersion(
-    comparisonVersion,
-    true,
-  );
-  if (comparisonVersionFormats.isEmpty) {
-    comparisonVersionFormats = findStandardFormatsForVersion(
-      comparisonVersion,
-      false,
-    );
-  }
-  final commonStandardFormats = templateVersionFormats.intersection(
-    comparisonVersionFormats,
-  );
-  if (commonStandardFormats.isEmpty) {
-    final MapEntry<bool, String>? shapeComparison =
-        reconcileVersionDifferencesByShape(templateVersion, comparisonVersion);
-    if (shapeComparison != null) {
-      return shapeComparison;
-    }
-    final bool? dottedNumericEquality = dottedNumericVersionsAreEqual(
-      templateVersion,
-      comparisonVersion,
-    );
-    if (dottedNumericEquality != null) {
-      return MapEntry(
-        dottedNumericEquality,
-        dottedNumericEquality ? comparisonVersion : templateVersion,
-      );
-    }
-    return null;
-  }
-  for (String pattern in commonStandardFormats) {
-    if (VersionService().doStringsMatchUnderRegEx(
-      pattern,
-      comparisonVersion,
-      templateVersion,
-    )) {
-      return MapEntry(true, comparisonVersion);
-    }
-  }
-  return MapEntry(false, templateVersion);
-}
-
-MapEntry<bool, String>? reconcileVersionDifferencesByShape(
-  String templateVersion,
-  String comparisonVersion,
-) {
-  final String templateShape = versionShapeForReconciliation(templateVersion);
-  final String comparisonShape = versionShapeForReconciliation(
-    comparisonVersion,
-  );
-  if (templateShape.isEmpty || templateShape != comparisonShape) {
-    return null;
-  }
-  final templateTokens = numericVersionTokens(templateVersion);
-  final comparisonTokens = numericVersionTokens(comparisonVersion);
-  if (templateTokens.isEmpty ||
-      templateTokens.length != comparisonTokens.length) {
-    return null;
-  }
-  if (listEquals(templateTokens, comparisonTokens)) {
-    return MapEntry(true, comparisonVersion);
-  }
-  return MapEntry(false, templateVersion);
-}
-
-String versionShapeForReconciliation(String version) {
-  return version.trim().toLowerCase().replaceAll(RegExp(r'\d+'), '#');
-}
-
-List<int> numericVersionTokens(String version) {
-  return RegExp(
-    r'\d+',
-  ).allMatches(version).map((m) => int.tryParse(m.group(0)!) ?? 0).toList();
-}
-
 /// Removes all matching elements and appends the last match to the end.
 /// This is intentionally deduplicating — only one instance is re-added.
 List<T> _moveToEnd<T extends Object>(List<T> arr, bool Function(T) match) {
@@ -1561,23 +1424,46 @@ Future<void> bgUpdateCheck(
     final List<App> trackOnlyToNotify = [];
     final List<App> toNotify = [];
     for (var i = 0; i < result.updates.length; i++) {
-      final willInstallInBackground = await appsProvider
-          .canInstallSilentlyInBackground(result.updates[i]);
+      // checkUpdates reports "the source's version string changed", not "the
+      // device is behind". Re-read the post-save app so the verdict is computed
+      // from the same state the app list renders, then apply the shared update
+      // predicate: without it a version reformat notifies (and silently
+      // installs) an update the UI itself does not show.
+      final App update =
+          appsProvider.apps[result.updates[i].id]?.app ?? result.updates[i];
+      final bool installable = appUpdateIsUserVisible(update);
+      final bool notifiable = appUpdateIsUserVisible(
+        update,
+        includeVersionOrderUncertain: true,
+      );
+      if (!installable && !notifiable) {
+        unawaited(
+          bgLogs.add(
+            'BG update task: ${update.id} version string changed '
+            '(${update.installedVersion} → ${update.latestVersion}) but no update '
+            'is available for the installed build; not notifying or installing.',
+          ),
+        );
+        continue;
+      }
+      final willInstallInBackground =
+          installable &&
+          await appsProvider.canInstallSilentlyInBackground(update);
       if (!canInstall || !willInstallInBackground) {
-        if (!result.updates[i].settings.getBool('skipUpdateNotifications')) {
+        if (notifiable && !update.settings.getBool('skipUpdateNotifications')) {
           unawaited(
             bgLogs.add(
-              'BG update task notifying for ${result.updates[i].id} (canInstall $canInstall, canInstallSilentlyInBackground $willInstallInBackground).',
+              'BG update task notifying for ${update.id} (canInstall $canInstall, canInstallSilentlyInBackground $willInstallInBackground).',
             ),
           );
-          if (result.updates[i].settings.getBool('trackOnly')) {
-            trackOnlyToNotify.add(result.updates[i]);
+          if (update.settings.getBool('trackOnly')) {
+            trackOnlyToNotify.add(update);
           } else {
-            toNotify.add(result.updates[i]);
+            toNotify.add(update);
           }
         }
       } else {
-        silentlyInstallable.add(result.updates[i].id);
+        silentlyInstallable.add(update.id);
       }
     }
 

@@ -8,7 +8,6 @@ import 'package:http/http.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/custom_errors.dart';
-import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
@@ -1175,8 +1174,8 @@ class GitHub extends AppSource {
         if (rel is Map<String, dynamic>) {
           final String? title =
               (rel['name'] as String?)?.trim().isNotEmpty == true
-                  ? (rel['name'] as String).trim()
-                  : (rel['tag_name'] as String?)?.trim();
+              ? (rel['name'] as String).trim()
+              : (rel['tag_name'] as String?)?.trim();
           if (title != null &&
               title.isNotEmpty &&
               !rawReleaseTitleCandidates.contains(title)) {

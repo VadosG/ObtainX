@@ -13,7 +13,6 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
 import 'package:flutter_fgbg/flutter_fgbg.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/app_sources/github.dart';
@@ -32,6 +31,7 @@ import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/providers/virustotal_provider.dart';
 import 'package:obtainium/theme/app_dialog_theme.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -741,6 +741,7 @@ extension AppsProviderInstall on AppsProvider {
     bool needsBGWorkaround = false,
     Map<String, dynamic> installOptions = const {},
     bool skipPreInstallVerification = false,
+    ThemeData? toastTheme,
 
     /// See [installApk]'s param of the same name. Verification/scanning runs
     /// once here against the container before any split part is installed.
@@ -753,6 +754,7 @@ extension AppsProviderInstall on AppsProvider {
         appId: dir.appId,
         primaryFile: dir.file,
         showMalwareScanDialog: showMalwareScanDialog,
+        toastTheme: toastTheme,
         cleanupOnSkip: () {
           try {
             if (dir.file.existsSync()) dir.file.deleteSync();
@@ -833,6 +835,7 @@ extension AppsProviderInstall on AppsProvider {
               .toList(),
           // Container already verified/scanned above.
           skipMalwareScan: true,
+          toastTheme: toastTheme,
           // The bundle itself is what gets saved (below); don't also persist
           // the extracted primary APK under the same release asset name.
           skipApkSaveFolderPersistForPrimaryApk: true,
@@ -867,6 +870,7 @@ extension AppsProviderInstall on AppsProvider {
     /// Whether a build-verification/VirusTotal result can be shown as a dialog
     /// (someone's watching) or must skip the app and notify (background/silent).
     bool showMalwareScanDialog = false,
+    ThemeData? toastTheme,
 
     /// Set by [installApkDir] for a split APK — the container was already
     /// verified/scanned once, so re-running per part would waste effort and the
@@ -893,6 +897,7 @@ extension AppsProviderInstall on AppsProvider {
         appId: file.appId,
         primaryFile: file.file,
         showMalwareScanDialog: showMalwareScanDialog,
+        toastTheme: toastTheme,
         cleanupOnSkip: () {
           try {
             if (file.file.existsSync()) file.file.deleteSync();
@@ -905,7 +910,11 @@ extension AppsProviderInstall on AppsProvider {
       if (!proceed) return false;
     }
     if (firstInstallNotificationsProvider != null) {
-      await _shareWithVerifiedApps(file, firstInstallNotificationsProvider);
+      await _shareWithVerifiedApps(
+        file,
+        firstInstallNotificationsProvider,
+        toastTheme: toastTheme,
+      );
     }
     final newInfo = await packageManager.getPackageArchiveInfo(
       archiveFilePath: file.file.path,
@@ -1014,8 +1023,9 @@ extension AppsProviderInstall on AppsProvider {
 
   Future<void> _shareWithVerifiedApps(
     DownloadedApk file,
-    NotificationsProvider notificationsProvider,
-  ) async {
+    NotificationsProvider notificationsProvider, {
+    ThemeData? toastTheme,
+  }) async {
     if (!settingsProvider.beforeNewInstallsShareToAppVerifier) return;
     // Intentionally does NOT gate on whether a known verifier app is installed.
     // Package-visibility rules (Android 11+) hide those packages from
@@ -1028,11 +1038,11 @@ extension AppsProviderInstall on AppsProvider {
       file.file.path,
       mimeType: 'application/vnd.android.package-archive',
     );
-    unawaited(
-      Fluttertoast.showToast(
-        msg: tr('appVerifierInstructionToast'),
-        toastLength: Toast.LENGTH_LONG,
-      ),
+    showAppToast(
+      tr('appVerifierInstructionToast'),
+      type: ToastType.info,
+      duration: const Duration(seconds: 4),
+      theme: toastTheme,
     );
     try {
       await SharePlus.instance.share(ShareParams(files: [f]));
@@ -1309,6 +1319,7 @@ extension AppsProviderInstall on AppsProvider {
           errors,
           allowUserInteraction,
           notificationsProvider,
+          dialogTheme,
         );
       } on MalwareScanBlockedError catch (error) {
         malwareScanSkips.add((
@@ -1331,6 +1342,7 @@ extension AppsProviderInstall on AppsProvider {
               notificationsProvider,
               useExisting,
               errors,
+              dialogTheme,
             ),
           );
         }
@@ -1345,6 +1357,7 @@ extension AppsProviderInstall on AppsProvider {
                 notificationsProvider,
                 useExisting,
                 errors,
+                dialogTheme,
               ),
             ),
         ];
@@ -1502,6 +1515,7 @@ extension AppsProviderInstall on AppsProvider {
     MultiAppMultiError errors,
     bool allowUserInteraction,
     NotificationsProvider? notificationsProvider,
+    ThemeData? toastTheme,
   ) async {
     final appEntry = apps[id];
     if (appEntry == null) return;
@@ -1590,6 +1604,7 @@ extension AppsProviderInstall on AppsProvider {
               'shizukuPretendToBeGooglePlay': shizukuPretendToBeGooglePlay,
             },
             showMalwareScanDialog: allowUserInteraction,
+            toastTheme: toastTheme,
           );
         }
       } else {
@@ -1653,6 +1668,7 @@ extension AppsProviderInstall on AppsProvider {
               'shizukuPretendToBeGooglePlay': shizukuPretendToBeGooglePlay,
             },
             showMalwareScanDialog: allowUserInteraction,
+            toastTheme: toastTheme,
           );
         }
       }
@@ -1694,6 +1710,7 @@ extension AppsProviderInstall on AppsProvider {
     NotificationsProvider? notificationsProvider,
     bool useExisting,
     MultiAppMultiError errors,
+    ThemeData? toastTheme,
   ) async {
     bool willBeSilent = false;
     DownloadedApk? downloadedFile;
@@ -1720,7 +1737,7 @@ extension AppsProviderInstall on AppsProvider {
       notify();
       willBeSilent = await canInstallSilently(apps[id]!.app);
       final installer = getInstaller();
-      await installer.ensurePermission();
+      await installer.ensurePermission(toastTheme: toastTheme);
       // Only the stock installer surfaces a system install prompt that pulls the
       // user away; wait for them to return before proceeding.
       if (!willBeSilent &&
@@ -1909,14 +1926,15 @@ extension AppsProviderInstall on AppsProvider {
     String? detail,
     String? reportUrl,
     required bool showMalwareScanDialog,
+    ThemeData? toastTheme,
     required void Function() cleanupOnSkip,
   }) async {
     if (status == malwareScanStatusClean) {
       if (showMalwareScanDialog) {
-        unawaited(
-          Fluttertoast.showToast(
-            msg: tr('malwareScanCleanToast', args: [app.finalName]),
-          ),
+        showAppToast(
+          tr('malwareScanCleanToast', args: [app.finalName]),
+          type: ToastType.success,
+          theme: toastTheme,
         );
       }
       return true;
@@ -2069,7 +2087,7 @@ extension AppsProviderInstall on AppsProvider {
               level: LogLevel.error,
             ),
           );
-          unawaited(Fluttertoast.showToast(msg: tr('apkSaveFolderCopyFailed')));
+          showAppToast(tr('apkSaveFolderCopyFailed'), type: ToastType.error);
         }
       }
       final bool skipLatest =
@@ -2134,7 +2152,7 @@ extension AppsProviderInstall on AppsProvider {
               level: LogLevel.error,
             ),
           );
-          unawaited(Fluttertoast.showToast(msg: tr('apkSaveFolderCopyFailed')));
+          showAppToast(tr('apkSaveFolderCopyFailed'), type: ToastType.error);
         }
       }
       // hasSaveFolder is always true here (caller only invokes with a resolved
@@ -2165,6 +2183,7 @@ extension AppsProviderInstall on AppsProvider {
     required String appId,
     required File primaryFile,
     required bool showMalwareScanDialog,
+    ThemeData? toastTheme,
     required void Function() cleanupOnSkip,
   }) async {
     final AppInMemory? appInMemory = apps[appId];
@@ -2237,6 +2256,7 @@ extension AppsProviderInstall on AppsProvider {
         detail: scan.detail,
         reportUrl: scan.reportUrl,
         showMalwareScanDialog: showMalwareScanDialog,
+        toastTheme: toastTheme,
         cleanupOnSkip: cleanupOnSkip,
       );
       if (!proceed) return false;

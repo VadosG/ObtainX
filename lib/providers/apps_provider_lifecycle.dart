@@ -33,12 +33,6 @@ final RegExp _androidApplicationIdPattern = RegExp(
   r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$',
 );
 
-class VersionComparison {
-  final bool areEqual;
-  final String version;
-  const VersionComparison({required this.areEqual, required this.version});
-}
-
 /// Outcome of [AppsProviderLifecycle.removeAppsWithModal].
 class RemoveAppsWithModalResult {
   const RemoveAppsWithModalResult._({
@@ -80,7 +74,11 @@ extension AppsProviderLifecycle on AppsProvider {
 
   String? _getRealInstalledVersion(App app, PackageInfo? installedInfo) {
     if (installedInfo == null) return null;
-    return app.settings.getBool('useVersionCodeAsOSVersion')
+    // Must use the same rule as the app page's displayed version: reading only
+    // the derived `useVersionCodeAsOSVersion` boolean made this compare
+    // versionName against a stored version code whenever the boolean and the
+    // versionDetection dropdown fell out of sync.
+    return app.usesVersionCodeAsOsVersion
         ? installedInfo.versionCode?.toString()
         : installedInfo.versionName;
   }
@@ -192,16 +190,8 @@ extension AppsProviderLifecycle on AppsProvider {
       );
       modded = true;
     }
-    // versionDetection is a string enum ('auto'/'standard'/'pseudo'/'versionCode'),
-    // NOT a bool — getBool() would return false for every string value and
-    // suppress install-version reconciliation for all standard apps.
-    final versionDetection = app.additionalSettings['versionDetection'];
-    final versionDetectionIsStandard =
-        versionDetection == 'auto' ||
-        versionDetection == 'standard' ||
-        versionDetection == 'versionCode' ||
-        versionDetection == true ||
-        versionDetection == null;
+    final VersionDetectionMode versionDetection = app.versionDetectionMode;
+    final bool versionDetectionIsStandard = app.usesStandardVersionDetection;
     final naiveStandardVersionDetection = _getNaiveStandardVersionDetection(
       app,
     );
@@ -272,8 +262,8 @@ extension AppsProviderLifecycle on AppsProvider {
       }
     }
     // 1c. Auto-heal a stored installedVersion whose format no longer matches
-    // the active useVersionCodeAsOSVersion setting (versionCode int vs
-    // versionName) — parity with fork main.
+    // the active version-code setting (versionCode int vs versionName) — parity
+    // with fork main.
     if (realInstalledVersion != null &&
         app.installedVersion != null &&
         versionDetectionIsStandard) {
@@ -282,7 +272,7 @@ extension AppsProviderLifecycle on AppsProvider {
         r'^\d+$',
       ).hasMatch(app.installedVersion!);
       final isRealPureInteger = RegExp(r'^\d+$').hasMatch(realInstalledVersion);
-      if (app.additionalSettings['useVersionCodeAsOSVersion'] == true) {
+      if (app.usesVersionCodeAsOsVersion) {
         if (!isStoredPureInteger) {
           formatMismatch = true;
         }
@@ -355,10 +345,8 @@ extension AppsProviderLifecycle on AppsProvider {
         realInstalledVersion != null &&
         versionsEffectivelyEqual(realInstalledVersion, app.latestVersion);
     final bool canAutoDisable =
-        app.additionalSettings['useVersionCodeAsOSVersion'] != true &&
-        (versionDetection == 'auto' ||
-            versionDetection == true ||
-            versionDetection == null);
+        !app.usesVersionCodeAsOsVersion &&
+        versionDetection == VersionDetectionMode.auto;
     if (canAutoDisable &&
         !trackOnly &&
         installedInfo != null &&
@@ -369,7 +357,7 @@ extension AppsProviderLifecycle on AppsProvider {
         )) {
       app = app.copyWith(
         additionalSettings: Map<String, dynamic>.from(app.additionalSettings)
-          ..['versionDetection'] = 'pseudo',
+          ..['versionDetection'] = VersionDetectionMode.pseudo.key,
         installedVersion: app.latestVersion,
       );
       unawaited(logs.add('Could not reconcile version formats for: ${app.id}'));
@@ -385,51 +373,11 @@ extension AppsProviderLifecycle on AppsProvider {
     return modded ? app : null;
   }
 
-  VersionComparison? reconcileVersionDifferences(
-    String templateVersion,
-    String comparisonVersion,
-  ) {
-    final templateVersionFormats = VersionService()
-        .findStandardFormatsForVersion(templateVersion, true);
-    var comparisonVersionFormats = VersionService()
-        .findStandardFormatsForVersion(comparisonVersion, true);
-    if (comparisonVersionFormats.isEmpty) {
-      comparisonVersionFormats = VersionService().findStandardFormatsForVersion(
-        comparisonVersion,
-        false,
-      );
-    }
-    final commonStandardFormats = templateVersionFormats.intersection(
-      comparisonVersionFormats,
-    );
-    if (commonStandardFormats.isEmpty) {
-      final bool? dottedNumericEquality = dottedNumericVersionsAreEqual(
-        templateVersion,
-        comparisonVersion,
-      );
-      if (dottedNumericEquality != null) {
-        return VersionComparison(
-          areEqual: dottedNumericEquality,
-          version: dottedNumericEquality ? comparisonVersion : templateVersion,
-        );
-      }
-      return null;
-    }
-    for (String pattern in commonStandardFormats) {
-      if (VersionService().doStringsMatchUnderRegEx(
-        pattern,
-        comparisonVersion,
-        templateVersion,
-      )) {
-        return VersionComparison(areEqual: true, version: comparisonVersion);
-      }
-    }
-    return VersionComparison(areEqual: false, version: templateVersion);
-  }
-
-  /// Delegates to [VersionService.doStringsMatchUnderRegEx].
-  bool doStringsMatchUnderRegEx(String pattern, String value1, String value2) =>
-      VersionService().doStringsMatchUnderRegEx(pattern, value1, value2);
+  // Version reconciliation deliberately lives ONLY as the top-level
+  // [reconcileVersionDifferences] in apps_provider.dart. A same-named member here
+  // shadows it for every call inside this extension, which is how the two copies
+  // drifted (this one was missing the shape fallback) and how genuine updates
+  // ended up being discarded. Call the top-level function; don't re-add a member.
 
   /// When version detection is disabled, decide whether an externally-observed
   /// device version should replace the stored pseudo/installed version.
