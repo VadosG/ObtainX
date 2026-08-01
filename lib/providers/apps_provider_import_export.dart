@@ -126,13 +126,13 @@ extension AppsProviderImportExport on AppsProvider {
     SettingsProvider? sp,
   }) async {
     final SettingsProvider settingsProvider = sp ?? this.settingsProvider;
+    if (isAuto && !settingsProvider.autoExportOnChanges) {
+      return null;
+    }
     var exportDir = await settingsProvider.getExportDir(
       warnIfInaccessible: true,
     );
     if (isAuto) {
-      if (!settingsProvider.autoExportOnChanges) {
-        return null;
-      }
       if (exportDir == null) {
         return null;
       }

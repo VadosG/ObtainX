@@ -283,6 +283,42 @@ void main() {
   );
 
   test(
+    'auto detection keeps two- and three-segment numeric versions standard',
+    () {
+      final AppsProvider appsProvider = AppsProvider(isBg: true);
+      final App app = App(
+        id: 'com.example.numericversion',
+        url: 'https://github.com/example/numeric-version',
+        author: 'Example',
+        name: 'Numeric Version',
+        installedVersion: '153.0',
+        latestVersion: '153.0.2',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      final App? correctedApp = appsProvider
+          .getCorrectedInstallStatusAppIfPossible(
+            app,
+            const FakePackageInfo(
+              packageName: 'com.example.numericversion',
+              versionName: '153.0',
+              versionCode: 15300,
+            ),
+          );
+      final App effectiveApp = correctedApp ?? app;
+
+      expect(effectiveApp.additionalSettings['versionDetection'], 'auto');
+      expect(effectiveApp.installedVersion, '153.0');
+      expect(effectiveApp.latestVersion, '153.0.2');
+      expect(appHasActionableUpdate(effectiveApp), true);
+    },
+  );
+
+  test(
     'release package lookup only includes debug build when requested',
     () async {
       // The standalone packageNamesToTryForInstalledInfo helper was inlined into

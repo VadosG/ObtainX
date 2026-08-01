@@ -2046,11 +2046,14 @@ extension AppsProviderInstall on AppsProvider {
     }
     try {
       final App? appForSave = apps[dir.appId]?.app;
-      final Uri? resolvedApkSaveUri = await settingsProvider.getApkSaveDir(
-        warnIfInaccessible: true,
-      );
+      final bool saveApkCopiesEnabled =
+          settingsProvider.saveDownloadedApkCopies;
+      final Uri? resolvedApkSaveUri = saveApkCopiesEnabled
+          ? await settingsProvider.getApkSaveDir(warnIfInaccessible: true)
+          : null;
       var bundleCopiedOk = false;
-      if (appForSave != null &&
+      if (saveApkCopiesEnabled &&
+          appForSave != null &&
           resolvedApkSaveUri != null &&
           dir.file.existsSync()) {
         try {
@@ -2071,18 +2074,19 @@ extension AppsProviderInstall on AppsProvider {
       }
       final bool skipLatest =
           appForSave != null && isSkipActiveForCurrentLatest(appForSave);
-      final bool hasSaveFolder = resolvedApkSaveUri != null;
       final bool shouldDeleteBundle;
-      if (hasSaveFolder && appForSave != null && dir.file.existsSync()) {
+      if (!saveApkCopiesEnabled) {
+        shouldDeleteBundle = somethingInstalled || skipLatest;
+      } else if (resolvedApkSaveUri != null &&
+          appForSave != null &&
+          dir.file.existsSync()) {
         // A configured, reachable save folder: only delete once the copy landed.
         shouldDeleteBundle =
             bundleCopiedOk && (somethingInstalled || skipLatest);
-      } else if (resolvedApkSaveUri == null) {
+      } else {
         // Feature on but folder unreachable: keep the bundle after a successful
         // install (so the user can still recover it), delete only when skipped.
         shouldDeleteBundle = somethingInstalled ? false : skipLatest;
-      } else {
-        shouldDeleteBundle = somethingInstalled || skipLatest;
       }
       if (shouldDeleteBundle && dir.file.existsSync()) {
         try {

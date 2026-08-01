@@ -187,6 +187,50 @@ class DownloadedDir {
 Set<String> findStandardFormatsForVersion(String version, bool strict) =>
     VersionService().findStandardFormatsForVersion(version, strict);
 
+/// Returns whether two plain dotted-numeric versions are equal after padding
+/// missing trailing segments with zero. Returns null when either version uses a
+/// different format.
+bool? dottedNumericVersionsAreEqual(String firstVersion, String secondVersion) {
+  final List<List<int>> parsedVersions = <List<int>>[];
+  for (final String version in <String>[firstVersion, secondVersion]) {
+    final List<String> segments = version.trim().split('.');
+    if (segments.length < 2) {
+      return null;
+    }
+    final List<int> numericSegments = <int>[];
+    for (final String segment in segments) {
+      if (segment.isEmpty ||
+          segment.codeUnits.any(
+            (int codeUnit) => codeUnit < 0x30 || codeUnit > 0x39,
+          )) {
+        return null;
+      }
+      final int? numericSegment = int.tryParse(segment);
+      if (numericSegment == null) {
+        return null;
+      }
+      numericSegments.add(numericSegment);
+    }
+    parsedVersions.add(numericSegments);
+  }
+
+  final List<int> firstSegments = parsedVersions[0];
+  final List<int> secondSegments = parsedVersions[1];
+  final int segmentCount = max(firstSegments.length, secondSegments.length);
+  for (int segmentIndex = 0; segmentIndex < segmentCount; segmentIndex++) {
+    final int firstSegment = segmentIndex < firstSegments.length
+        ? firstSegments[segmentIndex]
+        : 0;
+    final int secondSegment = segmentIndex < secondSegments.length
+        ? secondSegments[segmentIndex]
+        : 0;
+    if (firstSegment != secondSegment) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Version reconciliation helpers (fork feature) used by additional_options and
 // pseudo-version handling. [doStringsMatchUnderRegEx] already lives elsewhere.
 MapEntry<bool, String>? reconcileVersionDifferences(
@@ -214,10 +258,22 @@ MapEntry<bool, String>? reconcileVersionDifferences(
     comparisonVersionFormats,
   );
   if (commonStandardFormats.isEmpty) {
-    return reconcileVersionDifferencesByShape(
+    final MapEntry<bool, String>? shapeComparison =
+        reconcileVersionDifferencesByShape(templateVersion, comparisonVersion);
+    if (shapeComparison != null) {
+      return shapeComparison;
+    }
+    final bool? dottedNumericEquality = dottedNumericVersionsAreEqual(
       templateVersion,
       comparisonVersion,
     );
+    if (dottedNumericEquality != null) {
+      return MapEntry(
+        dottedNumericEquality,
+        dottedNumericEquality ? comparisonVersion : templateVersion,
+      );
+    }
+    return null;
   }
   for (String pattern in commonStandardFormats) {
     if (VersionService().doStringsMatchUnderRegEx(

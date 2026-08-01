@@ -403,6 +403,16 @@ extension AppsProviderLifecycle on AppsProvider {
       comparisonVersionFormats,
     );
     if (commonStandardFormats.isEmpty) {
+      final bool? dottedNumericEquality = dottedNumericVersionsAreEqual(
+        templateVersion,
+        comparisonVersion,
+      );
+      if (dottedNumericEquality != null) {
+        return VersionComparison(
+          areEqual: dottedNumericEquality,
+          version: dottedNumericEquality ? comparisonVersion : templateVersion,
+        );
+      }
       return null;
     }
     for (String pattern in commonStandardFormats) {
