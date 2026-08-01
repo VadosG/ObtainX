@@ -282,6 +282,41 @@ void main() {
     },
   );
 
+  test('stable release supersedes recognized matching prereleases', () {
+    for (final String prereleaseSuffix in <String>[
+      'preview',
+      'alpha',
+      'alpha-2',
+      'beta',
+      'beta.3',
+      'rc',
+      'rc1',
+    ]) {
+      final String prereleaseVersion = '4.0.0-$prereleaseSuffix';
+      expect(versionsEffectivelyEqual(prereleaseVersion, '4.0.0'), false);
+      expect(versionsEffectivelyEqual('4.0.0', prereleaseVersion), false);
+      expect(compareVersionsByNumericSegments(prereleaseVersion, '4.0.0'), -1);
+      expect(compareVersionsByNumericSegments('4.0.0', prereleaseVersion), 1);
+      expect(versionOrderIsUnclear(prereleaseVersion, '4.0.0'), false);
+    }
+
+    final App previewInstallation = App(
+      id: 'dev.bikram.obtainx',
+      url: 'https://github.com/bikram-agarwal/ObtainX',
+      author: 'Bikram Agarwal',
+      name: 'ObtainX',
+      installedVersion: '4.0.0-preview',
+      latestVersion: '4.0.0',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    expect(appHasActionableUpdate(previewInstallation), true);
+  });
+
   test(
     'auto detection keeps two- and three-segment numeric versions standard',
     () {

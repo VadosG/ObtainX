@@ -522,6 +522,34 @@ bool _isOnlyZeroSegments(String suffix) {
   return true;
 }
 
+final RegExp _recognizedPrereleasePattern = RegExp(
+  r'^(.+)-(preview|alpha|beta|rc)(?:[.-]?\d+)?$',
+  caseSensitive: false,
+);
+
+/// Orders a recognized prerelease immediately before the stable build with the
+/// same base version.
+int? _compareMatchingPrereleaseAndStableVersions(
+  String installed,
+  String latest,
+) {
+  final String normalizedInstalled = installed.trim().toLowerCase();
+  final String normalizedLatest = latest.trim().toLowerCase();
+  final RegExpMatch? installedPrerelease = _recognizedPrereleasePattern
+      .firstMatch(normalizedInstalled);
+  final RegExpMatch? latestPrerelease = _recognizedPrereleasePattern.firstMatch(
+    normalizedLatest,
+  );
+
+  if (installedPrerelease?.group(1) == normalizedLatest) {
+    return -1;
+  }
+  if (latestPrerelease?.group(1) == normalizedInstalled) {
+    return 1;
+  }
+  return null;
+}
+
 /// True if both versions are equal or one is a prefix of the other with a
 /// non-digit/non-dot suffix (e.g. 50.5.19 and 50.5.19-31), or zero-only dot
 /// extension (e.g. 1.2 and 1.2.0), or both contain the same commit-hash-like
@@ -530,6 +558,9 @@ bool _isOnlyZeroSegments(String suffix) {
 bool versionsEffectivelyEqual(String installed, String latest) {
   if (installed == latest) return true;
   if (installed.isEmpty || latest.isEmpty) return false;
+  if (_compareMatchingPrereleaseAndStableVersions(installed, latest) != null) {
+    return false;
+  }
   final int? releaseDateVersionComparison = compareReleaseDateVersionStrings(
     installed,
     latest,
@@ -578,6 +609,11 @@ bool versionsEffectivelyEqual(String installed, String latest) {
 /// Returns -1 if [installed] < [latest], 0 if equal, 1 if [installed] > [latest],
 /// null if not comparable.
 int? compareVersionsByNumericSegments(String installed, String latest) {
+  final int? prereleaseVersionComparison =
+      _compareMatchingPrereleaseAndStableVersions(installed, latest);
+  if (prereleaseVersionComparison != null) {
+    return prereleaseVersionComparison;
+  }
   final int? releaseDateVersionComparison = compareReleaseDateVersionStrings(
     installed,
     latest,

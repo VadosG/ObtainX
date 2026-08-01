@@ -31,7 +31,7 @@ jobs:
           # toolchain must be fixed (a floating `channel: stable` would break it).
           # Keep this EQUAL to the .flutter submodule commit referenced by the
           # fdroiddata recipe; bump both together when upgrading Flutter.
-          flutter-version: 3.44.7
+          flutter-version: 3.44.8
           cache: true
 
       - name: Cache Gradle packages
@@ -93,15 +93,19 @@ jobs:
           set -e
           APK_DIR=build/app/outputs/flutter-apk
           VERSION=${{ steps.extract_version.outputs.version }}
+          BUILD_NAME="$VERSION"
+          if [[ "$GITHUB_REF" == refs/heads/* && "$GITHUB_REF" != refs/heads/main ]]; then
+            BUILD_NAME="${VERSION}-preview"
+          fi
 
-          flutter build apk --split-per-abi --flavor normal
+          flutter build apk --split-per-abi --flavor normal --build-name="$BUILD_NAME"
           for f in "$APK_DIR"/app-*-normal-release.apk; do
             arch=$(basename "$f" | sed -E 's/^app-(.+)-normal-release\.apk$/\1/')
             mv "$f" "$APK_DIR/ObtainX-v${VERSION}-${arch}.apk"
           done
 
           rm -f android/key.properties
-          flutter build apk --split-per-abi --flavor fdroid -t lib/main_fdroid.dart
+          flutter build apk --split-per-abi --flavor fdroid -t lib/main_fdroid.dart --build-name="$BUILD_NAME"
           APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
           echo "Using apksigner: $APKSIGNER"
           for f in "$APK_DIR"/app-*-fdroid-release.apk; do
@@ -145,3 +149,43 @@ jobs:
             build/app/outputs/flutter-apk/ObtainX-*.apk
             build/app/outputs/flutter-apk/ObtainX-*-attestation.json
           generate_release_notes: true
+
+      - name: Prepare Rolling Preview Release
+        if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIEW_TAG: preview
+        run: |
+          set -euo pipefail
+
+          # A fixed non-version tag keeps preview builds outside F-Droid's
+          # ^v[0-9.]+$ update check while allowing one rolling GitHub release.
+          git push origin "+HEAD:refs/tags/$PREVIEW_TAG"
+
+          newest_release_tag="$(gh release list \
+            --exclude-drafts \
+            --limit 1 \
+            --json tagName \
+            --jq '.[0].tagName // empty')"
+          if [[ -n "$newest_release_tag" && "$newest_release_tag" != "$PREVIEW_TAG" ]]; then
+            gh release delete "$PREVIEW_TAG" --yes || true
+          fi
+
+      - name: Publish Rolling Preview Release
+        if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: preview
+          target_commitish: ${{ github.sha }}
+          name: ObtainX Preview
+          body: Rolling preview built from `${{ github.ref_name }}` at commit `${{ github.sha }}`.
+          prerelease: true
+          make_latest: false
+          draft: true
+          overwrite_files: true
+          files: |
+            build/app/outputs/flutter-apk/ObtainX-*.apk
+            build/app/outputs/flutter-apk/ObtainX-*-attestation.json
