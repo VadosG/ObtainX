@@ -4710,30 +4710,10 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
                         onPressed: updating
                             ? null
                             : () {
-                                // Stamp the reset so reconciliation doesn't
-                                // immediately refill installedVersion (see
-                                // [installStatusResetKey]). Correction is
-                                // skipped here so the freshly written stamp
-                                // isn't re-evaluated against install info
-                                // fetched inside this same save.
-                                final int? installTime =
-                                    app.installedInfo?.lastUpdateTime;
-                                final Map<String, dynamic> newSettings =
-                                    Map<String, dynamic>.from(
-                                      app.app.additionalSettings,
-                                    );
-                                if (installTime != null) {
-                                  newSettings[installStatusResetKey] =
-                                      installTime;
-                                } else {
-                                  // Nothing to pin the reset to; the app isn't
-                                  // on the device, so nothing refills it.
-                                  newSettings.remove(installStatusResetKey);
-                                }
                                 appsProvider.saveApps([
-                                  app.app.copyWith(
-                                    installedVersion: null,
-                                    additionalSettings: newSettings,
+                                  resetInstallStatusToDeviceVersion(
+                                    app.app,
+                                    app.installedInfo,
                                   ),
                                 ], attemptToCorrectInstallStatus: false);
                               },

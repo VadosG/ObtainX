@@ -52,6 +52,9 @@ Future<bool> persistAdditionalOptionsForm({
   app = app.copyWith(additionalSettings: {...originalSettings, ...formValues});
   syncVersionStringSourceSettings(app.additionalSettings);
   normalizeVersionDetectionSettings(app.additionalSettings);
+  if (app.additionalSettings.containsKey(installStatusResetKey)) {
+    app = resetInstallStatusToDeviceVersion(app, appInMem.installedInfo);
+  }
   if (source is GitHub) {
     if (!source.canVerifyAttestations(
       app.additionalSettings,

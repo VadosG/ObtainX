@@ -57,20 +57,28 @@ const int _bgUpdateMaxAttempts = 4;
 const int _bgUpdateMaxRetryWaitSeconds = 30;
 const int _bgClientExceptionRetryWaitSeconds = 15 * 60;
 
-/// `additionalSettings` key written by the "reset install status" action. Holds
-/// the device's `lastUpdateTime` as of the reset. While the stamp still matches
-/// the device's current install time, install-status reconciliation leaves
-/// `installedVersion` null instead of re-deriving it — without this the reset is
-/// a guaranteed no-op, because reconciliation refills a null `installedVersion`
-/// from the device (and, under pseudo versioning, refills it with
-/// `latestVersion` — exactly the value being reset). The stamp goes stale on its
-/// own the next time the app is really (re)installed, at which point normal
-/// detection resumes.
+/// Legacy key written by ObtainX 2.9.7's reset-install-status action.
+///
+/// Reconciliation removes it and restores the actual device version so affected
+/// apps are not pinned to "not installed" until their next reinstall.
 const String installStatusResetKey = 'installStatusResetAtInstallTime';
 
 final packageManager = AndroidPackageManager();
 final packageInfoFlags = PackageInfoFlags({PMFlag.getSigningCertificates});
 final packageInfoFlagsLight = PackageInfoFlags({});
+
+App resetInstallStatusToDeviceVersion(App app, PackageInfo? installedInfo) {
+  final Map<String, dynamic> additionalSettings = Map<String, dynamic>.from(
+    app.additionalSettings,
+  )..remove(installStatusResetKey);
+  final String? installedVersion = app.usesVersionCodeAsOsVersion
+      ? installedInfo?.versionCode?.toString()
+      : installedInfo?.versionName;
+  return app.copyWith(
+    installedVersion: installedVersion,
+    additionalSettings: additionalSettings,
+  );
+}
 
 List<String> certificateHashesFromSignatures(Iterable<List<int>> signatures) {
   return signatures

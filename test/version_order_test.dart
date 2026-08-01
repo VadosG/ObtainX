@@ -489,6 +489,110 @@ void main() {
   );
 
   test(
+    'legacy reset sentinel restores the device version for pseudo detection',
+    () {
+      final appsProvider = AppsProvider(isBg: true);
+      final app = App(
+        id: 'app.revanced.android.youtube',
+        url: 'https://github.com/LovecraftianGodsKiller/YouTube-Morphe',
+        author: 'LovecraftianGodsKiller',
+        name: 'YouTube-Morphe',
+        installedVersion: null,
+        latestVersion: '107',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: {
+          'versionDetection': 'pseudo',
+          installStatusResetKey: 123456,
+        },
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+        app,
+        const FakePackageInfo(
+          packageName: 'app.revanced.android.youtube',
+          versionName: '9.18.50',
+          versionCode: 106,
+        ),
+      );
+
+      expect(correctedApp, isNotNull);
+      expect(correctedApp!.installedVersion, '9.18.50');
+      expect(
+        correctedApp.additionalSettings.containsKey(installStatusResetKey),
+        false,
+      );
+    },
+  );
+
+  test('reset install status honors version-code detection', () {
+    final app = App(
+      id: 'app.example',
+      url: 'https://example.com/app',
+      author: 'Example',
+      name: 'Example',
+      installedVersion: 'release-107',
+      latestVersion: 'release-107',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: {
+        'versionDetection': 'versionCode',
+        'useVersionCodeAsOSVersion': true,
+        installStatusResetKey: 123456,
+      },
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    final resetApp = resetInstallStatusToDeviceVersion(
+      app,
+      const FakePackageInfo(
+        packageName: 'app.example',
+        versionName: '9.18.50',
+        versionCode: 106,
+      ),
+    );
+
+    expect(resetApp.installedVersion, '106');
+    expect(
+      resetApp.additionalSettings.containsKey(installStatusResetKey),
+      false,
+    );
+  });
+
+  test(
+    'reset removes the legacy sentinel when package info is unavailable',
+    () {
+      final app = App(
+        id: 'app.example',
+        url: 'https://example.com/app',
+        author: 'Example',
+        name: 'Example',
+        installedVersion: 'release-107',
+        latestVersion: 'release-107',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: {
+          'versionDetection': 'pseudo',
+          installStatusResetKey: 123456,
+        },
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      final resetApp = resetInstallStatusToDeviceVersion(app, null);
+
+      expect(resetApp.installedVersion, isNull);
+      expect(
+        resetApp.additionalSettings.containsKey(installStatusResetKey),
+        false,
+      );
+    },
+  );
+
+  test(
     'disabled version detection preserves installed version when system version equals stored version',
     () {
       // installed == realInstalledVersion == '9.18.50', but latest == '107' (different format).
