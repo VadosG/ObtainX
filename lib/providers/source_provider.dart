@@ -2143,7 +2143,8 @@ class ApkFilterService {
     if (apkFilterRegEx?.isNotEmpty == true) {
       final reg = RegExp(apkFilterRegEx!);
       apkUrls = apkUrls.where((element) {
-        final hasMatch = reg.hasMatch(element.key);
+        final hasMatch =
+            reg.hasMatch(element.key) || reg.hasMatch(element.value);
         return invert == true ? !hasMatch : hasMatch;
       }).toList();
     }
@@ -2157,12 +2158,15 @@ class ApkFilterService {
   }) async {
     if (apkUrls.length > 1) {
       for (var abi in abis) {
+        final RegExp architecturePattern = RegExp(
+          '.*$abi.*',
+          caseSensitive: false,
+        );
         final urls2 = apkUrls
             .where(
-              (element) => RegExp(
-                '.*$abi.*',
-                caseSensitive: false,
-              ).hasMatch(element.key),
+              (element) =>
+                  architecturePattern.hasMatch(element.key) ||
+                  architecturePattern.hasMatch(element.value),
             )
             .toList();
         if (urls2.isNotEmpty && urls2.length < apkUrls.length) {

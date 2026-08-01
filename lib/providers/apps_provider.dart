@@ -271,6 +271,115 @@ Future<File> downloadFileWithRetry(
   }
 }
 
+class DownloadResponseMetadata {
+  const DownloadResponseMetadata({
+    required this.finalUri,
+    required this.headers,
+  });
+
+  final Uri finalUri;
+  final Map<String, String> headers;
+
+  String? get suggestedFileName =>
+      extractDownloadFileNameFromContentDisposition(
+        headers['content-disposition'],
+      );
+}
+
+Uri _finalResponseUri(StreamedResponse response, Uri originalUri) {
+  if (response case BaseResponseWithUrl(:final Uri url)) {
+    return url;
+  }
+  return response.request?.url ?? originalUri;
+}
+
+String? sanitizeDownloadFileName(String? rawFileName) {
+  if (rawFileName == null) {
+    return null;
+  }
+  String fileName = rawFileName.trim();
+  if (fileName.length >= 2 &&
+      ((fileName.startsWith('"') && fileName.endsWith('"')) ||
+          (fileName.startsWith("'") && fileName.endsWith("'")))) {
+    fileName = fileName.substring(1, fileName.length - 1);
+  }
+  try {
+    fileName = Uri.decodeComponent(fileName);
+  } on FormatException {
+    // Keep the server-provided text when percent encoding is malformed.
+  }
+  fileName = fileName.replaceAll(r'\', '/').split('/').last.trim();
+  fileName = fileName
+      .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+      .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+      .replaceAll(RegExp(r'[. ]+$'), '');
+  return fileName.isEmpty || fileName == '.' || fileName == '..'
+      ? null
+      : fileName;
+}
+
+/// Extracts and sanitizes an RFC 6266/RFC 5987 response filename.
+String? extractDownloadFileNameFromContentDisposition(
+  String? contentDisposition,
+) {
+  if (contentDisposition == null || contentDisposition.trim().isEmpty) {
+    return null;
+  }
+  final RegExpMatch? encodedMatch = RegExp(
+    r'(?:^|;)\s*filename\*\s*=\s*([^;]+)',
+    caseSensitive: false,
+  ).firstMatch(contentDisposition);
+  if (encodedMatch != null) {
+    String encodedFileName = encodedMatch.group(1)!.trim();
+    encodedFileName = encodedFileName.replaceFirst(
+      RegExp(r"^[^']*'[^']*'"),
+      '',
+    );
+    final String? normalized = sanitizeDownloadFileName(encodedFileName);
+    if (normalized != null) {
+      return normalized;
+    }
+  }
+
+  final RegExpMatch? plainMatch = RegExp(
+    r'(?:^|;)\s*filename\s*=\s*(?:"([^"]*)"|([^;]*))',
+    caseSensitive: false,
+  ).firstMatch(contentDisposition);
+  return sanitizeDownloadFileName(plainMatch?.group(1) ?? plainMatch?.group(2));
+}
+
+DownloadResponseMetadata _downloadResponseMetadata(
+  StreamedResponse response,
+  Uri originalUri,
+) => DownloadResponseMetadata(
+  finalUri: _finalResponseUri(response, originalUri),
+  headers: response.headers,
+);
+
+/// Fetches only enough of a download response to inspect headers and redirects.
+Future<DownloadResponseMetadata?> probeDownloadResponseMetadata(
+  String url, {
+  Map<String, String>? headers,
+  bool allowInsecure = false,
+}) async {
+  final Uri originalUri = Uri.parse(url);
+  final Request request = Request('GET', originalUri);
+  if (headers != null) {
+    request.headers.addAll(headers);
+  }
+  request.headers[HttpHeaders.rangeHeader] = 'bytes=0-0';
+  final IOClient client = IOClient(createHttpClient(allowInsecure));
+  try {
+    final StreamedResponse response = await client.send(request);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return null;
+    }
+    return _downloadResponseMetadata(response, originalUri);
+  } finally {
+    client.close();
+  }
+}
+
 String hashListOfLists(List<List<int>> data) {
   final bytes = utf8.encode(jsonEncode(data));
   return sha256.convert(bytes).toString().substring(0, 8);
@@ -282,7 +391,16 @@ Future<String> checkPartialDownloadHashDynamic(
   int lowerLimit = _partialHashCheckLowerLimit,
   Map<String, String>? headers,
   bool allowInsecure = false,
+  void Function(DownloadResponseMetadata metadata)? onResponseMetadata,
 }) async {
+  bool metadataReported = false;
+  void reportMetadata(DownloadResponseMetadata metadata) {
+    if (!metadataReported) {
+      metadataReported = true;
+      onResponseMetadata?.call(metadata);
+    }
+  }
+
   for (int i = startingSize; i >= lowerLimit; i -= _partialHashCheckDecrement) {
     // Both requests fetch the same byte range to confirm the hash is
     // stable. The loop decrements on mismatch; when two consecutive
@@ -293,12 +411,14 @@ Future<String> checkPartialDownloadHashDynamic(
         i,
         headers: headers,
         allowInsecure: allowInsecure,
+        onResponseMetadata: reportMetadata,
       ),
       checkPartialDownloadHash(
         url,
         i,
         headers: headers,
         allowInsecure: allowInsecure,
+        onResponseMetadata: reportMetadata,
       ),
     ]);
     if (ab[0] == ab[1]) {
@@ -313,8 +433,10 @@ Future<String> checkPartialDownloadHash(
   int bytesToGrab, {
   Map<String, String>? headers,
   bool allowInsecure = false,
+  void Function(DownloadResponseMetadata metadata)? onResponseMetadata,
 }) async {
-  final req = Request('GET', Uri.parse(url));
+  final Uri originalUri = Uri.parse(url);
+  final req = Request('GET', originalUri);
   if (headers != null) {
     req.headers.addAll(headers);
   }
@@ -326,6 +448,7 @@ Future<String> checkPartialDownloadHash(
       throw ObtainiumError(response.reasonPhrase ?? tr('unexpectedError'))
         ..url = url;
     }
+    onResponseMetadata?.call(_downloadResponseMetadata(response, originalUri));
     final List<List<int>> bytes = await response.stream
         .take(bytesToGrab)
         .toList();
@@ -339,9 +462,11 @@ Future<String?> checkETagHeader(
   String url, {
   Map<String, String>? headers,
   bool allowInsecure = false,
+  void Function(DownloadResponseMetadata metadata)? onResponseMetadata,
 }) async {
   final reqHeaders = headers ?? {};
-  final req = Request('GET', Uri.parse(url));
+  final Uri originalUri = Uri.parse(url);
+  final req = Request('GET', originalUri);
   req.headers.addAll(reqHeaders);
   final client = IOClient(createHttpClient(allowInsecure));
   try {
@@ -349,6 +474,7 @@ Future<String?> checkETagHeader(
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return null;
     }
+    onResponseMetadata?.call(_downloadResponseMetadata(response, originalUri));
     final etag = response.headers[HttpHeaders.etagHeader]?.replaceAll('"', '');
     return etag != null
         ? sha256.convert(utf8.encode(etag)).toString().substring(0, 12)
@@ -486,7 +612,19 @@ Future<File> _downloadFile(
   // Use the headers to decide what the file extension is, and
   // whether it supports partial downloads (range request), and
   // what the total size of the file is (if provided)
-  String ext = resHeaders['content-disposition']?.split('.').last ?? 'apk';
+  final String? suggestedFileName =
+      extractDownloadFileNameFromContentDisposition(
+        resHeaders['content-disposition'],
+      );
+  String ext =
+      suggestedFileName != null &&
+          AppSource.isApkOrContainerFile(
+            suggestedFileName,
+            includeArchives: true,
+            includeTarballs: true,
+          )
+      ? suggestedFileName.split('.').last
+      : 'apk';
   if (ext.endsWith('"')) {
     ext = ext.substring(0, ext.length - 1);
   }
