@@ -199,32 +199,17 @@ extension AppsProviderLifecycle on AppsProvider {
       app,
       installedInfo,
     );
-    // 0. Honour an explicit "reset install status" until the app is genuinely
-    // (re)installed on the device. The stamp records the device's install time
-    // at reset; once that changes the reset has been superseded by a real
-    // install, so drop it and let normal detection resume.
-    final Object? installStatusResetStamp =
-        app.additionalSettings[installStatusResetKey];
-    // Deliberately no "always live" sentinel: anything that can't be matched
-    // against a real install time must expire, or a stale stamp would pin an
-    // installed app to "not installed" forever.
-    final bool installStatusResetIsLive =
-        installStatusResetStamp != null &&
-        installStatusResetStamp == installedInfo?.lastUpdateTime;
-    if (installStatusResetStamp != null && !installStatusResetIsLive) {
-      app = app.copyWith(
-        additionalSettings: Map<String, dynamic>.from(app.additionalSettings)
-          ..remove(installStatusResetKey),
-      );
+    // Migrate the 2.9.7 reset sentinel. It deliberately kept installedVersion
+    // null until a reinstall, which could strand an installed app indefinitely.
+    if (app.additionalSettings.containsKey(installStatusResetKey)) {
+      app = resetInstallStatusToDeviceVersion(app, installedInfo);
       modded = true;
     }
     // 1. Compare reported vs. real installed versions where one is null.
     if (installedInfo == null && app.installedVersion != null && !trackOnly) {
       app = app.copyWith(installedVersion: null);
       modded = true;
-    } else if (realInstalledVersion != null &&
-        app.installedVersion == null &&
-        !installStatusResetIsLive) {
+    } else if (realInstalledVersion != null && app.installedVersion == null) {
       // With detection disabled (non-standard), the device manifest version
       // isn't the source/release version, so mark installed = latest rather
       // than the manifest version (parity with fork main).
@@ -289,9 +274,6 @@ extension AppsProviderLifecycle on AppsProvider {
       }
     }
     // 2. Reconcile differences between reported and real installed versions.
-    // The `installedVersion != null` guard is a fork addition: a live install
-    // status reset (see [installStatusResetKey]) legitimately leaves it null
-    // while the app is still on the device, which would blow up the `!` below.
     if (realInstalledVersion != null &&
         app.installedVersion != null &&
         realInstalledVersion != app.installedVersion &&

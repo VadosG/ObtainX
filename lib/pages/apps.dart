@@ -4983,14 +4983,27 @@ class AppsPageState extends State<AppsPage> {
                 onPressed: () {
                   hapticSelection();
                   appsProvider.saveApps(
-                    appsToMark.map((a) {
-                      if (a.installedVersion != null &&
+                    appsToMark.map((appToUpdate) {
+                      final bool hasLegacyReset = appToUpdate.additionalSettings
+                          .containsKey(installStatusResetKey);
+                      App appToMark = appToUpdate;
+                      if ((appToUpdate.installedVersion != null ||
+                              hasLegacyReset) &&
                           !appsProvider.isVersionDetectionPossible(
-                            appsProvider.apps[a.id],
+                            appsProvider.apps[appToUpdate.id],
                           )) {
-                        return a.copyWith(installedVersion: a.latestVersion);
+                        appToMark = appToUpdate.copyWith(
+                          installedVersion: appToUpdate.latestVersion,
+                        );
                       }
-                      return a;
+                      if (hasLegacyReset) {
+                        appToMark = appToMark.copyWith(
+                          additionalSettings: Map<String, dynamic>.from(
+                            appToMark.additionalSettings,
+                          )..remove(installStatusResetKey),
+                        );
+                      }
+                      return appToMark;
                     }).toList(),
                     attemptToCorrectInstallStatus: false,
                     updateInstalledInfo: false,
