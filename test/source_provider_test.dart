@@ -14,7 +14,7 @@ import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/custom_errors.dart';
-import 'package:obtainium/providers/apps_provider_install.dart';
+import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:http/http.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1167,6 +1167,72 @@ void main() {
       expect(details.changeLog, '## Release 4.8.3\n- Fixed changelog issue');
     },
   );
+
+  group('HTML dynamic download filenames', () {
+    test('prefers and decodes RFC 5987 Content-Disposition filenames', () {
+      expect(
+        extractDownloadFileNameFromContentDisposition(
+          'attachment; filename="fallback.apk"; '
+          "filename*=UTF-8''LazyMedia%20Deluxe-3.457.apk",
+        ),
+        'LazyMedia Deluxe-3.457.apk',
+      );
+    });
+
+    test('sanitizes path components from response filenames', () {
+      expect(
+        extractDownloadFileNameFromContentDisposition(
+          r'attachment; filename="..\..\unsafe:name.apk"',
+        ),
+        'unsafe_name.apk',
+      );
+    });
+
+    test('uses Content-Disposition before the final redirected URL', () {
+      expect(
+        resolveHtmlAssetDisplayName(
+          downloadUrl: 'https://example.com/index.php?id=1234',
+          version: '3.457',
+          appName: 'LazyMedia Deluxe',
+          responseMetadata: DownloadResponseMetadata(
+            finalUri: Uri.parse('https://cdn.example.com/redirected-name.apk'),
+            headers: const {
+              'content-disposition': 'attachment; filename="server-name.apk"',
+            },
+          ),
+        ),
+        'server-name.apk',
+      );
+    });
+
+    test('uses a package filename from the final redirected URL', () {
+      expect(
+        resolveHtmlAssetDisplayName(
+          downloadUrl: 'https://example.com/index.php?id=1234',
+          version: '3.457',
+          appName: 'LazyMedia Deluxe',
+          responseMetadata: DownloadResponseMetadata(
+            finalUri: Uri.parse(
+              'https://cdn.example.com/LazyMedia-Deluxe-3.457.xapk',
+            ),
+            headers: const {},
+          ),
+        ),
+        'LazyMedia-Deluxe-3.457.xapk',
+      );
+    });
+
+    test('falls back to the known app name and version', () {
+      expect(
+        resolveHtmlAssetDisplayName(
+          downloadUrl: 'https://example.com/index.php?id=1234',
+          version: '3.457',
+          appName: 'LazyMedia Deluxe',
+        ),
+        'LazyMedia Deluxe-3.457.apk',
+      );
+    });
+  });
 
   test(
     'getDefaultValuesFromFormItems inflates subform items with full defaults',
