@@ -666,6 +666,9 @@ class AddAppPageState extends State<AddAppPage> {
       style: launcherTextStyle,
       textAlignVertical: TextAlignVertical.center,
       onTap: onTap,
+      onTapOutside: (_) {
+        _urlFieldFocusNode.unfocus();
+      },
       onChanged: (String text) {
         final bool valid = _isUrlInputValid(text);
         changeUserInput(text, valid, false);
@@ -680,6 +683,7 @@ class AddAppPageState extends State<AddAppPage> {
       keyboardType: TextInputType.url,
       textInputAction: TextInputAction.go,
       onSubmitted: (_) {
+        _urlFieldFocusNode.unfocus();
         if (!submitDisabled) {
           hapticSelection();
           onSubmit();
@@ -1314,6 +1318,7 @@ class AddAppPageState extends State<AddAppPage> {
 
     Future<void> addApp({bool resetUserInputAfter = false}) async {
       bool appWasAdded = false;
+      clearInputFocus();
       setState(() {
         gettingAppInfo = true;
       });
@@ -1486,12 +1491,22 @@ class AddAppPageState extends State<AddAppPage> {
         showError(e);
       } finally {
         if (mounted) {
+          final bool returnedToLauncher =
+              appWasAdded &&
+              widget._initialMode == _AddMode.launcher &&
+              _mode != _AddMode.launcher;
           setState(() {
             gettingAppInfo = false;
             if (appWasAdded || resetUserInputAfter) {
               _resetUrlModeInput();
             }
+            if (returnedToLauncher) {
+              _mode = _AddMode.launcher;
+            }
           });
+          if (returnedToLauncher) {
+            _notifyModeChanged();
+          }
         }
       }
     }

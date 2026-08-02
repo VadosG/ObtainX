@@ -3199,8 +3199,6 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
                       labelText: tr('package'),
                       isDense: true,
                     ),
-                    autocorrect: false,
-                    enableSuggestions: false,
                   ),
                 ],
               ),
