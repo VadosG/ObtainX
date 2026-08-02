@@ -282,6 +282,74 @@ void main() {
     },
   );
 
+  test('leading v is ignored throughout version comparison', () {
+    expect(versionsEffectivelyEqual('v4.0.0', '4.0.0'), true);
+    expect(compareVersionsByNumericSegments('v4.0.0', '4.0.0'), 0);
+    expect(versionOrderIsUnclear('v4.0.0', '4.0.0'), false);
+    expect(
+      versionsEffectivelyEqual('2.9.8-preview-240', 'v2.9.8-Preview-240'),
+      true,
+    );
+    expect(
+      compareVersionsByNumericSegments(
+        '2.9.8-preview-240',
+        'v2.9.8-Preview-240',
+      ),
+      0,
+    );
+    expect(
+      versionOrderIsUnclear('2.9.8-preview-240', 'v2.9.8-Preview-240'),
+      false,
+    );
+    expect(isBareIntegerVersion('v4000'), true);
+    expect(compareReleaseDateVersionStrings('v2026-08-01', '2026-08-02'), -1);
+  });
+
+  test('stable release supersedes recognized matching prereleases', () {
+    for (final String prereleaseSuffix in <String>[
+      'preview',
+      'preview-123',
+      'alpha',
+      'alpha-2',
+      'beta',
+      'beta.3',
+      'rc',
+      'rc1',
+    ]) {
+      final String prereleaseVersion = '4.0.0-$prereleaseSuffix';
+      expect(versionsEffectivelyEqual(prereleaseVersion, '4.0.0'), false);
+      expect(versionsEffectivelyEqual('4.0.0', prereleaseVersion), false);
+      expect(compareVersionsByNumericSegments(prereleaseVersion, '4.0.0'), -1);
+      expect(compareVersionsByNumericSegments('4.0.0', prereleaseVersion), 1);
+      expect(compareVersionsByNumericSegments(prereleaseVersion, 'v4.0.0'), -1);
+      expect(compareVersionsByNumericSegments('v4.0.0', prereleaseVersion), 1);
+      expect(versionOrderIsUnclear(prereleaseVersion, '4.0.0'), false);
+    }
+    expect(
+      compareVersionsByNumericSegments(
+        '4.0.0-preview-233',
+        'v4.0.0-Preview-234',
+      ),
+      -1,
+    );
+
+    final App previewInstallation = App(
+      id: 'dev.bikram.obtainx',
+      url: 'https://github.com/bikram-agarwal/ObtainX',
+      author: 'Bikram Agarwal',
+      name: 'ObtainX',
+      installedVersion: '4.0.0-preview-233',
+      latestVersion: 'v4.0.0',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    expect(appHasActionableUpdate(previewInstallation), true);
+  });
+
   test(
     'auto detection keeps two- and three-segment numeric versions standard',
     () {

@@ -111,9 +111,16 @@ class GitHub extends AppSource {
         'includePrereleases',
         label: tr('includePrereleases'),
         value: false,
+        turnsOffKeys: const ['verifyLatestTag'],
       ),
     ],
-    [GeneratedFormSwitch('verifyLatestTag', label: tr('verifyLatestTag'))],
+    [
+      GeneratedFormSwitch(
+        'verifyLatestTag',
+        label: tr('verifyLatestTag'),
+        turnsOffKeys: const ['includePrereleases'],
+      ),
+    ],
     AppSource.fallbackToOlderReleasesFormItem,
     [
       GeneratedFormTextField(
@@ -1037,7 +1044,8 @@ class GitHub extends AppSource {
             true
         ? additionalSettings['filterReleaseNotesByRegEx']
         : null;
-    final bool verifyLatestTag = additionalSettings['verifyLatestTag'] == true;
+    final bool verifyLatestTag =
+        additionalSettings['verifyLatestTag'] == true && !includePrereleases;
     final bool useLatestAssetDateAsReleaseDate =
         additionalSettings['useLatestAssetDateAsReleaseDate'] == true;
     final String sortMethod =

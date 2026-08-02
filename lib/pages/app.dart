@@ -3201,7 +3201,6 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
                     ),
                     autocorrect: false,
                     enableSuggestions: false,
-                    keyboardType: TextInputType.visiblePassword,
                   ),
                 ],
               ),

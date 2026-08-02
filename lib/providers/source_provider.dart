@@ -2279,6 +2279,22 @@ void _coerceAdditionalSettingTypes(
   }
 }
 
+/// Resolves legacy saved forms where switches that now turn each other off
+/// were both enabled. Form order determines priority.
+void _normalizeMutuallyExclusiveSwitches(
+  Map<String, dynamic> additionalSettings,
+  List<GeneratedFormItem> formItems,
+) {
+  for (final GeneratedFormItem item in formItems) {
+    if (item is! GeneratedFormSwitch || additionalSettings[item.key] != true) {
+      continue;
+    }
+    for (final String targetKey in item.turnsOffKeys) {
+      additionalSettings[targetKey] = false;
+    }
+  }
+}
+
 /// Normalises `apkUrls` to the current 2D-list JSON format.
 void _migrateApkUrlsFormat(Map<String, dynamic> json) {
   if (json['apkUrls'] == null) return;
@@ -2458,6 +2474,7 @@ Map<String, dynamic> appJSONCompatibilityModifiers(Map<String, dynamic> json) {
     additionalSettings,
   );
   _coerceAdditionalSettingTypes(additionalSettings, formItems);
+  _normalizeMutuallyExclusiveSwitches(additionalSettings, formItems);
 
   int preferredApkIndex = json['preferredApkIndex'] == null
       ? 0

@@ -184,17 +184,35 @@ bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39; // '0'..'9'
 
 final RegExp _digitsOnlySegmentPattern = RegExp(r'^\d+$');
 
+String _trimAndRemoveLeadingVersionPrefix(String version) {
+  final String trimmedVersion = version.trim();
+  if (trimmedVersion.length > 1 &&
+      trimmedVersion[0].toLowerCase() == 'v' &&
+      _isDigit(trimmedVersion.codeUnitAt(1))) {
+    return trimmedVersion.substring(1);
+  }
+  return trimmedVersion;
+}
+
+/// Trims, removes a conventional numeric `v` prefix, and normalizes case.
+String _normalizeVersionForComparison(String version) {
+  return _trimAndRemoveLeadingVersionPrefix(version).toLowerCase();
+}
+
 /// True for a bare integer version: an Android version code or build number
 /// (`451`), as opposed to a version string with separators (`4.5.1`).
-bool isBareIntegerVersion(String version) =>
-    _digitsOnlySegmentPattern.hasMatch(version.trim());
+bool isBareIntegerVersion(String version) {
+  return _digitsOnlySegmentPattern.hasMatch(
+    _normalizeVersionForComparison(version),
+  );
+}
 
 bool _containsDigit(String value) => value.codeUnits.any(_isDigit);
 
 // ── Release-date-shaped version strings ─────────────────────────────────────
 
 DateTime? _dateFromReleaseDateVersionString(String version) {
-  final String trimmedVersion = version.trim();
+  final String trimmedVersion = _trimAndRemoveLeadingVersionPrefix(version);
   if (trimmedVersion.isEmpty) {
     return null;
   }
@@ -522,14 +540,44 @@ bool _isOnlyZeroSegments(String suffix) {
   return true;
 }
 
+final RegExp _recognizedPrereleasePattern = RegExp(
+  r'^(.+)-(preview|alpha|beta|rc)(?:[.-]?\d+)?$',
+  caseSensitive: false,
+);
+
+/// Orders a recognized prerelease immediately before the stable build with the
+/// same base version.
+int? _compareMatchingPrereleaseAndStableVersions(
+  String installed,
+  String latest,
+) {
+  final String normalizedInstalled = _normalizeVersionForComparison(installed);
+  final String normalizedLatest = _normalizeVersionForComparison(latest);
+  final RegExpMatch? installedPrerelease = _recognizedPrereleasePattern
+      .firstMatch(normalizedInstalled);
+  final RegExpMatch? latestPrerelease = _recognizedPrereleasePattern.firstMatch(
+    normalizedLatest,
+  );
+
+  if (installedPrerelease?.group(1) == normalizedLatest) {
+    return -1;
+  }
+  if (latestPrerelease?.group(1) == normalizedInstalled) {
+    return 1;
+  }
+  return null;
+}
+
 /// True if both versions are equal or one is a prefix of the other with a
 /// non-digit/non-dot suffix (e.g. 50.5.19 and 50.5.19-31), or zero-only dot
 /// extension (e.g. 1.2 and 1.2.0), or both contain the same commit-hash-like
 /// token (6+ hex chars). Avoids a false match of 1.0 in 10.0 by requiring a
 /// boundary after the shorter.
 bool versionsEffectivelyEqual(String installed, String latest) {
-  if (installed == latest) return true;
-  if (installed.isEmpty || latest.isEmpty) return false;
+  final String normalizedInstalled = _normalizeVersionForComparison(installed);
+  final String normalizedLatest = _normalizeVersionForComparison(latest);
+  if (normalizedInstalled == normalizedLatest) return true;
+  if (normalizedInstalled.isEmpty || normalizedLatest.isEmpty) return false;
   final int? releaseDateVersionComparison = compareReleaseDateVersionStrings(
     installed,
     latest,
@@ -537,13 +585,21 @@ bool versionsEffectivelyEqual(String installed, String latest) {
   if (releaseDateVersionComparison == 0) {
     return true;
   }
-  final installedLen = installed.length;
-  final latestLen = latest.length;
-  if (latest.startsWith(installed) && latestLen > installedLen) {
-    final nextChar = latest.codeUnitAt(installedLen);
+  if (_compareMatchingPrereleaseAndStableVersions(
+        normalizedInstalled,
+        normalizedLatest,
+      ) !=
+      null) {
+    return false;
+  }
+  final installedLen = normalizedInstalled.length;
+  final latestLen = normalizedLatest.length;
+  if (normalizedLatest.startsWith(normalizedInstalled) &&
+      latestLen > installedLen) {
+    final nextChar = normalizedLatest.codeUnitAt(installedLen);
     if (!_isDigit(nextChar)) {
       if (nextChar == 0x2E) {
-        if (_isOnlyZeroSegments(latest.substring(installedLen + 1))) {
+        if (_isOnlyZeroSegments(normalizedLatest.substring(installedLen + 1))) {
           return true;
         }
       } else {
@@ -551,11 +607,12 @@ bool versionsEffectivelyEqual(String installed, String latest) {
       }
     }
   }
-  if (installed.startsWith(latest) && installedLen > latestLen) {
-    final nextChar = installed.codeUnitAt(latestLen);
+  if (normalizedInstalled.startsWith(normalizedLatest) &&
+      installedLen > latestLen) {
+    final nextChar = normalizedInstalled.codeUnitAt(latestLen);
     if (!_isDigit(nextChar)) {
       if (nextChar == 0x2E) {
-        if (_isOnlyZeroSegments(installed.substring(latestLen + 1))) {
+        if (_isOnlyZeroSegments(normalizedInstalled.substring(latestLen + 1))) {
           return true;
         }
       } else {
@@ -563,11 +620,14 @@ bool versionsEffectivelyEqual(String installed, String latest) {
       }
     }
   }
-  if (_oneVersionStringContainsOtherAsBoundedSubstring(installed, latest)) {
+  if (_oneVersionStringContainsOtherAsBoundedSubstring(
+    normalizedInstalled,
+    normalizedLatest,
+  )) {
     return true;
   }
-  final installedHashes = commitHashLikeTokensFromVersion(installed);
-  final latestHashes = commitHashLikeTokensFromVersion(latest);
+  final installedHashes = commitHashLikeTokensFromVersion(normalizedInstalled);
+  final latestHashes = commitHashLikeTokensFromVersion(normalizedLatest);
   if (installedHashes.intersection(latestHashes).isNotEmpty) {
     return true;
   }
@@ -578,6 +638,8 @@ bool versionsEffectivelyEqual(String installed, String latest) {
 /// Returns -1 if [installed] < [latest], 0 if equal, 1 if [installed] > [latest],
 /// null if not comparable.
 int? compareVersionsByNumericSegments(String installed, String latest) {
+  final String normalizedInstalled = _normalizeVersionForComparison(installed);
+  final String normalizedLatest = _normalizeVersionForComparison(latest);
   final int? releaseDateVersionComparison = compareReleaseDateVersionStrings(
     installed,
     latest,
@@ -585,8 +647,16 @@ int? compareVersionsByNumericSegments(String installed, String latest) {
   if (releaseDateVersionComparison != null) {
     return releaseDateVersionComparison;
   }
-  final installedSegments = numericVersionTokens(installed);
-  final latestSegments = numericVersionTokens(latest);
+  final int? prereleaseVersionComparison =
+      _compareMatchingPrereleaseAndStableVersions(
+        normalizedInstalled,
+        normalizedLatest,
+      );
+  if (prereleaseVersionComparison != null) {
+    return prereleaseVersionComparison;
+  }
+  final installedSegments = numericVersionTokens(normalizedInstalled);
+  final latestSegments = numericVersionTokens(normalizedLatest);
   if (installedSegments.isEmpty || latestSegments.isEmpty) return null;
   final maxLen = installedSegments.length > latestSegments.length
       ? installedSegments.length
@@ -659,17 +729,22 @@ bool _dotSeparatedNumericPrefixThenIncomparableHashRemainder(
 /// digit groups, or dot segments disagree in a hash-like way that overrides that
 /// compare. Not [versionsEffectivelyEqual].
 bool versionOrderIsUnclear(String installed, String latest) {
-  if (installed.isEmpty || latest.isEmpty) return false;
-  if (installed == latest) return false;
-  if (versionsEffectivelyEqual(installed, latest)) return false;
+  final String normalizedInstalled = _normalizeVersionForComparison(installed);
+  final String normalizedLatest = _normalizeVersionForComparison(latest);
+  if (normalizedInstalled.isEmpty || normalizedLatest.isEmpty) return false;
+  if (normalizedInstalled == normalizedLatest) return false;
+  if (versionsEffectivelyEqual(installed, latest)) {
+    return false;
+  }
   if (compareReleaseDateVersionStrings(installed, latest) != null) {
     return false;
   }
-  if (compareVersionsByNumericSegments(installed, latest) == 0) {
+  if (compareVersionsByNumericSegments(normalizedInstalled, normalizedLatest) ==
+      0) {
     return true;
   }
   return _dotSeparatedNumericPrefixThenIncomparableHashRemainder(
-    installed,
-    latest,
+    normalizedInstalled,
+    normalizedLatest,
   );
 }

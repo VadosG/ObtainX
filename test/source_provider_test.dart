@@ -215,6 +215,8 @@ class _StubFDroidRepo extends FDroidRepo {
 }
 
 class _StubGitHub extends GitHub {
+  bool latestEndpointRequested = false;
+
   @override
   Future<Response> sourceRequest(
     String url,
@@ -222,9 +224,43 @@ class _StubGitHub extends GitHub {
     bool followRedirects = true,
     Object? postBody,
   }) async {
+    if (url.endsWith('/releases/latest')) {
+      latestEndpointRequested = true;
+      return Response(
+        jsonEncode({
+          'tag_name': '1.0',
+          'name': '1.0',
+          'draft': false,
+          'prerelease': false,
+          'published_at': '2026-01-01T00:00:00Z',
+          'body': '',
+          'assets': <Map<String, dynamic>>[],
+        }),
+        200,
+      );
+    }
     if (url.endsWith('/releases?per_page=100')) {
       return Response(
         jsonEncode([
+          {
+            'tag_name': '1.1-Preview-2',
+            'name': '1.1-Preview-2',
+            'draft': false,
+            'prerelease': true,
+            'published_at': '2026-01-02T00:00:00Z',
+            'body': '',
+            'assets': [
+              {
+                'name': 'example-preview.apk',
+                'browser_download_url':
+                    'https://github.com/example/app/releases/download/preview/example-preview.apk',
+                'url':
+                    'https://api.github.com/repos/example/app/releases/assets/2',
+                'size': 124,
+                'digest': 'sha256:preview123',
+              },
+            ],
+          },
           {
             'tag_name': '1.0',
             'name': '1.0',
@@ -493,6 +529,41 @@ void main() {
       'https://github.com/example/app',
     );
   });
+
+  test('GitHub prerelease and latest switches turn each other off', () {
+    final List<GeneratedFormSwitch> switches = GitHub()
+        .additionalSourceAppSpecificSettingFormItems
+        .expand((List<GeneratedFormItem> row) => row)
+        .whereType<GeneratedFormSwitch>()
+        .toList();
+    final GeneratedFormSwitch includePrereleases = switches.firstWhere(
+      (GeneratedFormSwitch item) => item.key == 'includePrereleases',
+    );
+    final GeneratedFormSwitch verifyLatestTag = switches.firstWhere(
+      (GeneratedFormSwitch item) => item.key == 'verifyLatestTag',
+    );
+
+    expect(includePrereleases.turnsOffKeys, contains('verifyLatestTag'));
+    expect(verifyLatestTag.turnsOffKeys, contains('includePrereleases'));
+  });
+
+  test(
+    'GitHub prerelease selection overrides legacy verify-latest state',
+    () async {
+      final _StubGitHub source = _StubGitHub();
+      final APKDetails details = await source.getLatestAPKDetails(
+        'https://github.com/example/app',
+        <String, dynamic>{
+          'includePrereleases': true,
+          'verifyLatestTag': true,
+          'sortMethodChoice': 'date',
+        },
+      );
+
+      expect(source.latestEndpointRequested, false);
+      expect(details.version, '1.1-Preview-2');
+    },
+  );
 
   test('GitHub download retries 401 without an authorization header', () {
     final Map<String, String> headers = <String, String>{
