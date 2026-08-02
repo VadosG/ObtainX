@@ -12,6 +12,7 @@ import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
+import 'package:obtainium/components/ui_widgets.dart' show AppSwitchListTile;
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
@@ -463,7 +464,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                   ),
                                 ),
                               ),
-                              SwitchListTile(
+                              AppSwitchListTile(
                                 visualDensity: VisualDensity.compact,
                                 contentPadding: importPageCardSwitchTilePadding,
                                 title: Text(tr('saveDownloadedApkCopies')),
@@ -635,7 +636,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                 );
                               })(),
                             ),
-                            SwitchListTile(
+                            AppSwitchListTile(
                               visualDensity: VisualDensity.compact,
                               contentPadding: importPageCardSwitchTilePadding,
                               title: Text(tr('autoExportOnChanges')),

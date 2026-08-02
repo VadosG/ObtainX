@@ -367,6 +367,18 @@ VersionComparison? reconcileVersionDifferences(
   String templateVersion,
   String comparisonVersion,
 ) {
+  // A stable release and its matching prerelease share the same dotted numeric
+  // substring, but they are different releases. Without this guard, loose
+  // matching treats 2.9.8 and v2.9.8-Preview-245 as equal, replaces the real
+  // installed version with the preview tag, and makes the UI report a
+  // pseudo-version even in explicit standard mode.
+  if (_compareMatchingPrereleaseAndStableVersions(
+        templateVersion,
+        comparisonVersion,
+      ) !=
+      null) {
+    return VersionComparison(areEqual: false, version: templateVersion);
+  }
   final templateVersionFormats = findStandardFormatsForVersion(
     templateVersion,
     true,

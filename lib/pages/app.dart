@@ -5,7 +5,8 @@ import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show Listenable, listEquals;
+import 'package:flutter/foundation.dart'
+    show Listenable, listEquals, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -40,7 +41,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:markdown/markdown.dart' as md;
 
-bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
+@visibleForTesting
+bool isInstalledVersionPseudoForDisplay(AppInMemory appInMemory) {
   final App appModel = appInMemory.app;
   final String? displayedInstalledVersion = appModel.installedVersion;
   if (displayedInstalledVersion == null || displayedInstalledVersion.isEmpty) {
@@ -53,6 +55,15 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
           displayedInstalledVersion,
           appModel.latestVersion,
         );
+  }
+
+  // Auto is allowed to infer/fall back to pseudo when source and device
+  // versions cannot be reconciled. Explicit Standard and Version Code are not:
+  // those modes must never present themselves as pseudo regardless of any
+  // mismatch in stored, source, or OS-reported versions.
+  if (appModel.versionDetectionMode == VersionDetectionMode.standard ||
+      appModel.versionDetectionMode == VersionDetectionMode.versionCode) {
+    return false;
   }
 
   if (!versionsEffectivelyEqual(
@@ -3420,7 +3431,8 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
               pageThemeContext,
               tr('installed'),
               app?.app.installedVersion ?? '',
-              pseudoVersion: app != null && _isInstalledVersionPseudo(app),
+              pseudoVersion:
+                  app != null && isInstalledVersionPseudoForDisplay(app),
               versionCode: app != null && app.app.usesVersionCodeAsOsVersion,
               osInstalledVersion: app == null
                   ? null

@@ -16,6 +16,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/pages/app.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
@@ -317,8 +318,16 @@ void main() {
       'rc1',
     ]) {
       final String prereleaseVersion = '4.0.0-$prereleaseSuffix';
+      final VersionComparison? prereleaseToStableReconciliation =
+          reconcileVersionDifferences(prereleaseVersion, '4.0.0');
+      final VersionComparison? stableToPrereleaseReconciliation =
+          reconcileVersionDifferences('4.0.0', 'v$prereleaseVersion');
       expect(versionsEffectivelyEqual(prereleaseVersion, '4.0.0'), false);
       expect(versionsEffectivelyEqual('4.0.0', prereleaseVersion), false);
+      expect(prereleaseToStableReconciliation?.areEqual, false);
+      expect(prereleaseToStableReconciliation?.version, prereleaseVersion);
+      expect(stableToPrereleaseReconciliation?.areEqual, false);
+      expect(stableToPrereleaseReconciliation?.version, '4.0.0');
       expect(compareVersionsByNumericSegments(prereleaseVersion, '4.0.0'), -1);
       expect(compareVersionsByNumericSegments('4.0.0', prereleaseVersion), 1);
       expect(compareVersionsByNumericSegments(prereleaseVersion, 'v4.0.0'), -1);
@@ -349,6 +358,89 @@ void main() {
 
     expect(appHasActionableUpdate(previewInstallation), true);
   });
+
+  test('pseudo display inference respects the selected detection mode', () {
+    AppInMemory appWithMode(String versionDetectionMode) {
+      return AppInMemory(
+        App(
+          id: 'app.example',
+          url: 'https://github.com/example/app',
+          author: 'Example',
+          name: 'Example',
+          installedVersion: 'source-build-106',
+          latestVersion: 'source-build-106',
+          apkUrls: const <MapEntry<String, String>>[],
+          preferredApkIndex: 0,
+          additionalSettings: <String, dynamic>{
+            'versionDetection': versionDetectionMode,
+          },
+          lastUpdateCheck: DateTime.now(),
+          pinned: false,
+        ),
+        null,
+        const FakePackageInfo(
+          packageName: 'app.example',
+          versionName: '9.18.50',
+          versionCode: 451,
+        ),
+        null,
+      );
+    }
+
+    expect(isInstalledVersionPseudoForDisplay(appWithMode('auto')), true);
+    expect(isInstalledVersionPseudoForDisplay(appWithMode('pseudo')), true);
+    expect(isInstalledVersionPseudoForDisplay(appWithMode('standard')), false);
+    expect(
+      isInstalledVersionPseudoForDisplay(appWithMode('versionCode')),
+      false,
+    );
+  });
+
+  test(
+    'stable install is not replaced by its latest preview in auto or standard mode',
+    () {
+      for (final String versionDetectionMode in <String>['auto', 'standard']) {
+        final AppsProvider appsProvider = AppsProvider(isBg: true);
+        addTearDown(appsProvider.dispose);
+        final App app = App(
+          id: 'dev.bikram.obtainx',
+          url: 'https://github.com/bikram-agarwal/ObtainX',
+          author: 'Bikram Agarwal',
+          name: 'ObtainX',
+          installedVersion: 'v2.9.8-Preview-245',
+          latestVersion: 'v2.9.8-Preview-245',
+          apkUrls: const <MapEntry<String, String>>[],
+          preferredApkIndex: 0,
+          additionalSettings: <String, dynamic>{
+            'versionDetection': versionDetectionMode,
+          },
+          lastUpdateCheck: DateTime.now(),
+          pinned: false,
+        );
+
+        expect(isVersionPseudo(app), false);
+
+        final App correctedApp =
+            appsProvider.getCorrectedInstallStatusAppIfPossible(
+              app,
+              const FakePackageInfo(
+                packageName: 'dev.bikram.obtainx',
+                versionName: '2.9.8',
+                versionCode: 3980,
+              ),
+            ) ??
+            app;
+
+        expect(
+          correctedApp.additionalSettings['versionDetection'],
+          versionDetectionMode,
+        );
+        expect(correctedApp.installedVersion, '2.9.8');
+        expect(correctedApp.latestVersion, 'v2.9.8-Preview-245');
+        expect(appHasActionableUpdate(correctedApp), false);
+      }
+    },
+  );
 
   test(
     'auto detection keeps two- and three-segment numeric versions standard',

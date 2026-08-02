@@ -21,6 +21,8 @@ import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/themes_settings_section.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
 import 'package:obtainium/components/tv_slider_wrapper.dart';
+import 'package:obtainium/components/ui_widgets.dart'
+    show AppSwitch, AppSwitchListTile;
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/app_sources/github.dart';
@@ -60,7 +62,7 @@ String get _aboutObtainXPrivacyUrl => tr('aboutObtainXPrivacyUrl');
 String get _aboutObtainXTermsUrl => tr('aboutObtainXTermsUrl');
 String get _aboutRememberUrl => tr('aboutRememberUrl');
 String get _aboutFilePipeUrl => tr('aboutFilePipeUrl');
-const String _aboutAuthorUrl = 'https://github.com/bikram-agarwal';
+const String _aboutAuthorUrl = 'https://bikram-agarwal.github.io/';
 const String _aboutWikiUrl = 'https://wiki.obtainium.imranr.dev/';
 
 class SettingsPage extends StatefulWidget {
@@ -699,6 +701,10 @@ class SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     child: Scaffold(
+                      // Keep IME animation from relaying out the entire settings
+                      // master pane and re-rasterizing its blurred app bar every
+                      // frame. The keyboard overlays the scroll view instead.
+                      resizeToAvoidBottomInset: false,
                       backgroundColor: sp.useGradientBackground
                           ? Colors.transparent
                           : cs.surface,
@@ -762,6 +768,9 @@ class SettingsPageState extends State<SettingsPage> {
                 Expanded(
                   flex: 4,
                   child: Scaffold(
+                    // The detail pane contains text fields but does not need its
+                    // full widget tree resized on every keyboard animation frame.
+                    resizeToAvoidBottomInset: false,
                     backgroundColor: sp.useGradientBackground
                         ? Colors.transparent
                         : cs.surface,
@@ -822,6 +831,11 @@ class SettingsPageState extends State<SettingsPage> {
         ),
       ),
       child: Scaffold(
+        // Settings is an eager, card-heavy scroll surface. Resizing it for every
+        // intermediate IME inset repeatedly lays out all sections and repaints
+        // the progressive-blur app bar, which makes keyboard entry visibly
+        // advance in stages. Let the keyboard overlay the scroll view instead.
+        resizeToAvoidBottomInset: false,
         backgroundColor: cs.surface,
         body: Stack(
           fit: StackFit.expand,
@@ -1101,7 +1115,7 @@ class _UpdatesSection extends StatelessWidget {
                   message: tr('foregroundServiceReliabilityNote'),
                   padding: EdgeInsets.zero,
                 ),
-                Switch(
+                AppSwitch(
                   value: sp.useFGService,
                   onChanged: (bool value) => sp.useFGService = value,
                 ),
@@ -1122,7 +1136,7 @@ class _UpdatesSection extends StatelessWidget {
                       '${tr('backgroundUpdateReqsExplanation')}\n\n${tr('backgroundUpdateLimitsExplanation')}',
                   padding: EdgeInsets.zero,
                 ),
-                Switch(
+                AppSwitch(
                   value: sp.enableBackgroundUpdates,
                   onChanged: (bool value) => sp.enableBackgroundUpdates = value,
                 ),
@@ -1135,7 +1149,7 @@ class _UpdatesSection extends StatelessWidget {
       if (sp.enableBackgroundUpdates) {
         rows
           ..add(
-            SwitchListTile(
+            AppSwitchListTile(
               key: const ValueKey<String>('background_install_wifi_only'),
               title: Text(tr('bgUpdatesOnWiFiOnly')),
               value: sp.bgUpdatesOnWiFiOnly,
@@ -1143,7 +1157,7 @@ class _UpdatesSection extends StatelessWidget {
             ),
           )
           ..add(
-            SwitchListTile(
+            AppSwitchListTile(
               key: const ValueKey<String>('background_install_charging_only'),
               title: Text(tr('bgUpdatesWhileChargingOnly')),
               value: sp.bgUpdatesWhileChargingOnly,
@@ -1153,37 +1167,37 @@ class _UpdatesSection extends StatelessWidget {
       }
     }
     rows.addAll(<Widget>[
-      SwitchListTile(
+      AppSwitchListTile(
         key: const ValueKey<String>('check_updates_on_start'),
         title: Text(tr('checkOnStart')),
         value: sp.checkOnStart,
         onChanged: (bool value) => sp.checkOnStart = value,
       ),
-      SwitchListTile(
+      AppSwitchListTile(
         key: const ValueKey<String>('check_update_on_detail_page'),
         title: Text(tr('checkUpdateOnDetailPage')),
         value: sp.checkUpdateOnDetailPage,
         onChanged: (bool value) => sp.checkUpdateOnDetailPage = value,
       ),
-      SwitchListTile(
+      AppSwitchListTile(
         key: const ValueKey<String>('include_prereleases_by_default'),
         title: Text(tr('includePrereleasesByDefault')),
         value: sp.includePrereleasesByDefault,
         onChanged: (bool value) => sp.includePrereleasesByDefault = value,
       ),
-      SwitchListTile(
+      AppSwitchListTile(
         key: const ValueKey<String>('only_check_installed_or_track_only_apps'),
         title: Text(tr('onlyCheckInstalledOrTrackOnlyApps')),
         value: sp.onlyCheckInstalledOrTrackOnlyApps,
         onChanged: (bool value) => sp.onlyCheckInstalledOrTrackOnlyApps = value,
       ),
-      SwitchListTile(
+      AppSwitchListTile(
         key: const ValueKey<String>('remove_on_external_uninstall'),
         title: Text(tr('removeOnExternalUninstall')),
         value: sp.removeOnExternalUninstall,
         onChanged: (bool value) => sp.removeOnExternalUninstall = value,
       ),
-      SwitchListTile(
+      AppSwitchListTile(
         key: const ValueKey<String>('parallel_downloads'),
         title: Text(tr('parallelDownloads')),
         value: sp.parallelDownloads,
@@ -1693,14 +1707,14 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
             },
           ),
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('GHReqPrefixUseToken')),
           value: sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ?? false,
           onChanged: (val) {
             sp.setSettingBool(GitHub.githubReqPrefixUseTokenKey, val);
           },
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('repoRenamedCheck')),
           value: sp.getSettingBool('checkRepoRename') ?? false,
           onChanged: (val) {
@@ -1906,22 +1920,22 @@ class _AppearanceSection extends StatelessWidget {
         _CustomFontTile(sp: sp),
         const _UiScaleSlider(),
         const _CardCornerScaleSlider(),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('updateButtonsAtTopOfAppPage')),
           value: sp.updateButtonsAtTopOfAppPage,
           onChanged: (value) => sp.updateButtonsAtTopOfAppPage = value,
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('alwaysUsePhoneLayout')),
           value: sp.alwaysUsePhoneLayout,
           onChanged: (value) => sp.alwaysUsePhoneLayout = value,
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('showWebInAppView')),
           value: sp.showAppWebpage,
           onChanged: (value) => sp.showAppWebpage = value,
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('highlightTouchTargets')),
           value: sp.highlightTouchTargets,
           onChanged: (value) => sp.highlightTouchTargets = value,
@@ -2429,24 +2443,24 @@ class _WarningsSection extends StatelessWidget {
     return M3eExpressiveSettingsCard(
       colorScheme: cs,
       items: [
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('showBatteryOptimizationPrompt')),
           // Bound to the existing hideBatteryOptimizationWarning (inverted) so the
           // launch dialog's "don't show again" and this toggle stay in sync.
           value: !sp.hideBatteryOptimizationWarning,
           onChanged: (value) => sp.hideBatteryOptimizationWarning = !value,
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('showTrackOnlyWarnings')),
           value: !sp.hideTrackOnlyWarning,
           onChanged: (value) => sp.hideTrackOnlyWarning = !value,
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('showAPKOriginWarnings')),
           value: !sp.hideAPKOriginWarning,
           onChanged: (value) => sp.hideAPKOriginWarning = !value,
         ),
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('showAppDowngradeError')),
           value: sp.showAppDowngradeError,
           onChanged: (value) => sp.showAppDowngradeError = value,
@@ -2500,7 +2514,7 @@ class _InteractionSection extends StatelessWidget {
     return M3eExpressiveSettingsCard(
       colorScheme: cs,
       items: [
-        SwitchListTile(
+        AppSwitchListTile(
           title: Text(tr('tactileFeedbackEnabled')),
           value: sp.tactileFeedbackEnabled,
           onChanged: (value) => sp.tactileFeedbackEnabled = value,
@@ -2672,7 +2686,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                 ),
                 icon: const Icon(Icons.open_in_new_rounded),
               ),
-              Switch(
+              AppSwitch(
                 value:
                     !_loading &&
                     _appManagerInstalled &&
@@ -2699,7 +2713,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                 size: 20,
                 padding: EdgeInsets.zero,
               ),
-              Switch(
+              AppSwitch(
                 value: !_loading && sp.beforeNewInstallsShareToAppVerifier,
                 onChanged: !_loading
                     ? (bool value) =>
@@ -2748,7 +2762,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                 ),
                 icon: const Icon(Icons.open_in_new_rounded),
               ),
-              Switch(
+              AppSwitch(
                 value:
                     !_loading &&
                     _letMeDowngradeInstalled &&
@@ -2783,7 +2797,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                     size: 20,
                     padding: EdgeInsets.zero,
                   ),
-                  Switch(
+                  AppSwitch(
                     value: hasValidatedKey && sp.enableVirusTotalScanning,
                     onChanged: hasValidatedKey
                         ? (bool value) => sp.enableVirusTotalScanning = value
@@ -2999,7 +3013,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                 ),
               ),
               if (sp.installerMode == 'shizuku')
-                SwitchListTile(
+                AppSwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(tr('shizukuPretendToBeGooglePlay')),
                   value: sp.shizukuPretendToBeGooglePlay,

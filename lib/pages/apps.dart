@@ -35,7 +35,8 @@ import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/empty_state_illustration.dart';
 import 'package:obtainium/components/rippling_wavy_progress/circular.dart';
 import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
-import 'package:obtainium/components/ui_widgets.dart' show ActionListTile;
+import 'package:obtainium/components/ui_widgets.dart'
+    show ActionListTile, AppSwitch, AppSwitchListTile;
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/date_time_format.dart';
 import 'package:obtainium/main.dart';
@@ -68,6 +69,20 @@ enum CategoryFilterIntent { neutral, include, exclude }
 enum CategoryFilterMatchMode { any, all }
 
 const int _maxFolderNameLength = 20;
+
+class _HideWhileKeyboardOpen extends StatelessWidget {
+  const _HideWhileKeyboardOpen({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+      return const SizedBox.shrink();
+    }
+    return child;
+  }
+}
 
 CategoryFilterIntent nextCategoryFilterIntent(CategoryFilterIntent intent) =>
     switch (intent) {
@@ -2433,7 +2448,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
               ),
               Divider(color: colorScheme.outlineVariant),
               const SizedBox(height: 4),
-              SwitchListTile(
+              AppSwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(tr('pinUpdates')),
                 value: effectivePinUpdates,
@@ -2442,7 +2457,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                   setSheetState(() {});
                 },
               ),
-              SwitchListTile(
+              AppSwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(tr('moveNonInstalledAppsToBottom')),
                 value: effectiveBuryNonInstalled,
@@ -2467,7 +2482,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                         message: tr('showFolderedAppsOnMainPageTooltip'),
                         padding: EdgeInsets.zero,
                       ),
-                      Switch(
+                      AppSwitch(
                         value: settingsProvider.showFolderedAppsOnMainPage,
                         onChanged: (value) {
                           settingsProvider.showFolderedAppsOnMainPage = value;
@@ -2677,92 +2692,83 @@ class AppsPageState extends State<AppsPage> {
           constraints: BoxConstraints(
             maxWidth: matchHomeNavigationPosition ? 336 : double.infinity,
           ),
-          child: AnimatedSlide(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOutCubicEmphasized,
-            offset: MediaQuery.of(context).viewInsets.bottom > 0
-                ? const Offset(0, 1.5)
-                : Offset.zero,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: MediaQuery.of(context).viewInsets.bottom > 0 ? 0.0 : 1.0,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (hasMassObtainOperations)
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        FloatingActionButton.small(
-                          heroTag: '${heroScope}_update_all_fab',
-                          elevation: 6,
-                          highlightElevation: 8,
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primaryContainer,
-                          foregroundColor: Theme.of(
-                            context,
-                          ).colorScheme.onPrimaryContainer,
-                          onPressed: () {
-                            hapticSelection();
-                            runMassObtain();
-                          },
-                          tooltip: null,
-                          child: const Icon(
-                            Icons.file_download_outlined,
-                            size: 20,
+          child: _HideWhileKeyboardOpen(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (hasMassObtainOperations)
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      FloatingActionButton.small(
+                        heroTag: '${heroScope}_update_all_fab',
+                        elevation: 6,
+                        highlightElevation: 8,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onPrimaryContainer,
+                        onPressed: () {
+                          hapticSelection();
+                          runMassObtain();
+                        },
+                        tooltip: null,
+                        child: const Icon(
+                          Icons.file_download_outlined,
+                          size: 20,
+                        ),
+                      ),
+                      if (pageUpdateCount > 0)
+                        Positioned(
+                          left: -4,
+                          bottom: -4,
+                          child: Badge(
+                            label: Text(pageUpdateCount.toString()),
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.error,
+                            textColor: Theme.of(context).colorScheme.onError,
                           ),
                         ),
-                        if (pageUpdateCount > 0)
-                          Positioned(
-                            left: -4,
-                            bottom: -4,
-                            child: Badge(
-                              label: Text(pageUpdateCount.toString()),
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.error,
-                              textColor: Theme.of(context).colorScheme.onError,
-                            ),
-                          ),
-                      ],
-                    )
-                  else
-                    const SizedBox.shrink(),
-                  if (isSelectionActive)
-                    FloatingActionButton.small(
-                      heroTag: '${heroScope}_actions_fab',
-                      elevation: 6,
-                      highlightElevation: 8,
-                      backgroundColor: Theme.of(context).colorScheme.primary,
-                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                      onPressed: () {
-                        hapticSelection();
-                        openSelectionActionsSheet();
-                      },
-                      tooltip: null,
-                      child: const Icon(Icons.checklist, size: 20),
-                    )
-                  else
-                    FloatingActionButton.small(
-                      heroTag: '${heroScope}_view_options_fab',
-                      elevation: 6,
-                      highlightElevation: 8,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onSurfaceVariant,
-                      onPressed: () {
-                        hapticSelection();
-                        openViewOptionsSheet();
-                      },
-                      tooltip: null,
-                      child: const Icon(Icons.tune, size: 20),
-                    ),
-                ],
-              ),
+                    ],
+                  )
+                else
+                  const SizedBox.shrink(),
+                if (isSelectionActive)
+                  FloatingActionButton.small(
+                    heroTag: '${heroScope}_actions_fab',
+                    elevation: 6,
+                    highlightElevation: 8,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    onPressed: () {
+                      hapticSelection();
+                      openSelectionActionsSheet();
+                    },
+                    tooltip: null,
+                    child: const Icon(Icons.checklist, size: 20),
+                  )
+                else
+                  FloatingActionButton.small(
+                    heroTag: '${heroScope}_view_options_fab',
+                    elevation: 6,
+                    highlightElevation: 8,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    foregroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant,
+                    onPressed: () {
+                      hapticSelection();
+                      openViewOptionsSheet();
+                    },
+                    tooltip: null,
+                    child: const Icon(Icons.tune, size: 20),
+                  ),
+              ],
             ),
           ),
         ),

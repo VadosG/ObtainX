@@ -676,140 +676,131 @@ class _RegexAssistSheetBodyState extends State<_RegexAssistSheetBody> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Text(
-              _rawHint(),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (widget.rawLineSuggestions.length > 1) ...<Widget>[
-              Text(
-                tr('filterRegexAssistPickRawLineLabel'),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              RadioGroup<String>(
-                groupValue: _selectedRawLineSuggestion,
-                onChanged: (String? newLine) {
-                  if (newLine == null) return;
-                  setState(() {
-                    _selectedRawLineSuggestion = newLine;
-                    _rawController.text = newLine;
-                    _rebuildCandidates();
-                  });
-                },
-                child: Column(
-                  children: widget.rawLineSuggestions
-                      .map(
-                        (String line) => RadioListTile<String>(
-                          value: line,
-                          title: Text(line, style: theme.textTheme.bodyMedium),
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      )
-                      .toList(),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            TextField(
-              controller: _rawController,
-              minLines: 1,
-              maxLines: 4,
-              decoration: appPageOutlinedInputDecoration(
-                context,
-                labelText: null,
-                hintText: _rawPlaceholder(),
-              ),
-              onChanged: (_) => setState(_rebuildCandidates),
-            ),
-            if (_candidates.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 16),
-              Text(
-                _pickSubstringLabel(),
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              RadioGroup<String>(
-                groupValue: _customController.text.trim().isNotEmpty
-                    ? null
-                    : _selectedCandidate,
-                onChanged: (String? newCandidate) {
-                  if (newCandidate == null) return;
-                  setState(() {
-                    _selectedCandidate = newCandidate;
-                    _customController.clear();
-                  });
-                },
-                child: Column(
-                  children: _candidates
-                      .map(
-                        (String candidate) => RadioListTile<String>(
-                          value: candidate,
-                          title: Text(
-                            candidate,
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      )
-                      .toList(),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            RadioGroup<String>(
-              groupValue: _customController.text.trim().isNotEmpty
-                  ? 'custom'
-                  : null,
-              onChanged: (String? value) {
-                if (value == null) return;
-                setState(_selectCustomSubstring);
-              },
-              child: RadioListTile<String>(
-                value: 'custom',
-                title: Text(
-                  tr('versionRegexAssistCustomLabel'),
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _customController,
-              focusNode: _customFocusNode,
-              decoration: appPageOutlinedInputDecoration(
-                context,
-                labelText: null,
-                hintText: tr('versionRegexAssistCustomHint'),
-              ),
-              onChanged: (_) {
-                setState(() {
-                  _selectedCandidate = null;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-          ],
+      bodyPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      bodyChildren: <Widget>[
+        Text(
+          _rawHint(),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
-      ),
+        const SizedBox(height: 12),
+        if (widget.rawLineSuggestions.length > 1) ...<Widget>[
+          Text(
+            tr('filterRegexAssistPickRawLineLabel'),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          RadioGroup<String>(
+            groupValue: _selectedRawLineSuggestion,
+            onChanged: (String? newLine) {
+              if (newLine == null) return;
+              setState(() {
+                _selectedRawLineSuggestion = newLine;
+                _rawController.text = newLine;
+                _rebuildCandidates();
+              });
+            },
+            child: Column(
+              children: widget.rawLineSuggestions
+                  .map(
+                    (String line) => RadioListTile<String>(
+                      value: line,
+                      title: Text(line, style: theme.textTheme.bodyMedium),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        TextField(
+          controller: _rawController,
+          minLines: 1,
+          maxLines: 4,
+          decoration: appPageOutlinedInputDecoration(
+            context,
+            labelText: null,
+            hintText: _rawPlaceholder(),
+          ),
+          onChanged: (_) => setState(_rebuildCandidates),
+        ),
+        if (_candidates.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 16),
+          Text(
+            _pickSubstringLabel(),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          RadioGroup<String>(
+            groupValue: _customController.text.trim().isNotEmpty
+                ? null
+                : _selectedCandidate,
+            onChanged: (String? newCandidate) {
+              if (newCandidate == null) return;
+              setState(() {
+                _selectedCandidate = newCandidate;
+                _customController.clear();
+              });
+            },
+            child: Column(
+              children: _candidates
+                  .map(
+                    (String candidate) => RadioListTile<String>(
+                      value: candidate,
+                      title: Text(candidate, style: theme.textTheme.bodyMedium),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        RadioGroup<String>(
+          groupValue: _customController.text.trim().isNotEmpty
+              ? 'custom'
+              : null,
+          onChanged: (String? value) {
+            if (value == null) return;
+            setState(_selectCustomSubstring);
+          },
+          child: RadioListTile<String>(
+            value: 'custom',
+            title: Text(
+              tr('versionRegexAssistCustomLabel'),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _customController,
+          focusNode: _customFocusNode,
+          decoration: appPageOutlinedInputDecoration(
+            context,
+            labelText: null,
+            hintText: tr('versionRegexAssistCustomHint'),
+          ),
+          onChanged: (_) {
+            setState(() {
+              _selectedCandidate = null;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+      ],
       footer: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: <Widget>[
