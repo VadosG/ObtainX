@@ -545,6 +545,27 @@ final RegExp _recognizedPrereleasePattern = RegExp(
   caseSensitive: false,
 );
 
+final RegExp _recognizedNumericReleasePattern = RegExp(
+  r'^\d+(?:\.\d+)+(?:-(?:preview|alpha|beta|rc)(?:[.-]?\d+)?)?$',
+  caseSensitive: false,
+);
+
+/// True when both values are conventional dotted release versions, optionally
+/// with a leading `v` and a recognized prerelease suffix. These versions remain
+/// comparable even when only one side is a prerelease or their base versions
+/// differ, such as `2.9.8-Preview-241` and `v2.9.7`.
+bool recognizedNumericReleaseVersionsAreComparable(
+  String installed,
+  String latest,
+) {
+  return _recognizedNumericReleasePattern.hasMatch(
+        _normalizeVersionForComparison(installed),
+      ) &&
+      _recognizedNumericReleasePattern.hasMatch(
+        _normalizeVersionForComparison(latest),
+      );
+}
+
 /// Orders a recognized prerelease immediately before the stable build with the
 /// same base version.
 int? _compareMatchingPrereleaseAndStableVersions(

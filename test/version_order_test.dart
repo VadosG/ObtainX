@@ -387,6 +387,63 @@ void main() {
   );
 
   test(
+    'auto detection keeps a newer installed preview comparable to an older stable release',
+    () {
+      const String installedVersion = '2.9.8-Preview-241';
+      const String latestVersion = 'v2.9.7';
+      final AppsProvider appsProvider = AppsProvider(isBg: true);
+      addTearDown(appsProvider.dispose);
+      final App app = App(
+        id: 'dev.bikram.obtainx',
+        url: 'https://github.com/bikram-agarwal/ObtainX',
+        author: 'Bikram Agarwal',
+        name: 'ObtainX',
+        installedVersion: installedVersion,
+        latestVersion: latestVersion,
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+      const FakePackageInfo installedInfo = FakePackageInfo(
+        packageName: 'dev.bikram.obtainx',
+        versionName: installedVersion,
+        versionCode: 39803,
+      );
+
+      expect(
+        recognizedNumericReleaseVersionsAreComparable(
+          installedVersion,
+          latestVersion,
+        ),
+        true,
+      );
+      expect(
+        compareVersionsByNumericSegments(installedVersion, latestVersion),
+        1,
+      );
+      expect(
+        appsProvider.isVersionDetectionPossible(
+          AppInMemory(app, null, installedInfo, null),
+        ),
+        true,
+      );
+
+      final App effectiveApp =
+          appsProvider.getCorrectedInstallStatusAppIfPossible(
+            app,
+            installedInfo,
+          ) ??
+          app;
+
+      expect(effectiveApp.additionalSettings['versionDetection'], 'auto');
+      expect(effectiveApp.installedVersion, installedVersion);
+      expect(appHasActionableUpdate(effectiveApp), false);
+    },
+  );
+
+  test(
     'release package lookup only includes debug build when requested',
     () async {
       // The standalone packageNamesToTryForInstalledInfo helper was inlined into

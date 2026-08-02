@@ -136,6 +136,12 @@ extension AppsProviderLifecycle on AppsProvider {
     final bool releaseCommitShaAsVersion = app.app.settings.getBool(
       'releaseCommitShaAsVersion',
     );
+    final bool hasComparableNumericReleaseVersions =
+        realInstalledVersion != null &&
+        recognizedNumericReleaseVersionsAreComparable(
+          realInstalledVersion,
+          app.app.latestVersion,
+        );
     return !app.app.settings.getBool('trackOnly') &&
         !app.app.settings.getBool('releaseDateAsVersion') &&
         !isHTMLWithNoVersionDetection &&
@@ -146,6 +152,7 @@ extension AppsProviderLifecycle on AppsProvider {
                   app.app.latestVersion,
                 ) !=
                 null ||
+            hasComparableNumericReleaseVersions ||
             naiveStandardVersionDetection ||
             hasCommitSha ||
             releaseCommitShaAsVersion);
