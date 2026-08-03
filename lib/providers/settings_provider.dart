@@ -395,9 +395,9 @@ class SettingsProvider with ChangeNotifier {
   }
 
   // ── App UI scale ────────────────────────────────────────────────────────
-  // User-tunable multiplier applied to the effective text scale used by the
-  // top-level MediaQuery override in main.dart. The system scaler is capped at
-  // 1.2 and the final custom scale stays inside this 0.75-1.25 range.
+  // User-tunable multiplier applied to the complete app viewport in main.dart.
+  // The system text scaler is capped separately at 1.2, and the viewport scale
+  // stays inside this 0.75-1.25 range.
   static const double appUiScaleMin = 0.75;
   static const double appUiScaleMax = 1.25;
   static const double appUiScaleDefault = 1.0;
