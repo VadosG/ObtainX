@@ -3185,53 +3185,73 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
         }
       }
 
-      Future<void> openFixTrackOnlyPackageIdDialog() async {
+      Future<void> openFixTrackOnlyPackageIdSheet() async {
         if (app == null) return;
-        final packageIdController = TextEditingController(text: app.app.id);
-        final submittedPackageId = await _showPageDialog<String>(
-          hostContext: context,
-          builder: (dialogContext) => AlertDialog(
-            title: Text(tr('fixPackageId')),
-            contentPadding: appDialogContentPadding,
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    tr('fixPackageIdExplanation'),
-                    style: Theme.of(dialogContext).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: packageIdController,
-                    decoration: appPageOutlinedInputDecoration(
-                      dialogContext,
-                      labelText: tr('package'),
-                      isDense: true,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: updating ? null : () => Navigator.pop(dialogContext),
-                child: Text(tr('cancel')),
-              ),
-              FilledButton(
-                onPressed: updating
-                    ? null
-                    : () => Navigator.pop(
-                        dialogContext,
-                        packageIdController.text.trim(),
+        String packageIdInput = app.app.id;
+        final ThemeData? pageTheme = _cachedPageTheme;
+        final submittedPackageId = await showAppModalSheet<String>(
+          context: context,
+          backgroundColor: pageTheme?.colorScheme.surface,
+          builder: (BuildContext sheetContext) {
+            final Widget sheet = Builder(
+              builder: (BuildContext themedContext) {
+                final ThemeData theme = Theme.of(themedContext);
+                return AppSheetContent(
+                  children: [
+                    Text(
+                      tr('fixPackageId'),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
-                child: Text(tr('ok')),
-              ),
-            ],
-          ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      tr('fixPackageIdExplanation'),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      initialValue: packageIdInput,
+                      onChanged: (String value) => packageIdInput = value,
+                      decoration: appPageOutlinedInputDecoration(
+                        themedContext,
+                        labelText: tr('package'),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: updating
+                              ? null
+                              : () => Navigator.pop(sheetContext),
+                          child: Text(tr('cancel')),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: updating
+                              ? null
+                              : () => Navigator.pop(
+                                  sheetContext,
+                                  packageIdInput.trim(),
+                                ),
+                          child: Text(tr('ok')),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            );
+            return pageTheme == null
+                ? sheet
+                : Theme(data: pageTheme, child: sheet);
+          },
         );
-        packageIdController.dispose();
         if (!context.mounted) return;
         if (submittedPackageId == null || submittedPackageId.isEmpty) return;
         if (submittedPackageId == widget.appId) return;
@@ -3963,7 +3983,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
                     FilledButton.tonalIcon(
                       onPressed: updating || app == null
                           ? null
-                          : openFixTrackOnlyPackageIdDialog,
+                          : openFixTrackOnlyPackageIdSheet,
                       icon: const Icon(Icons.edit_outlined, size: 20),
                       label: Text(tr('fixPackageId')),
                     ),
