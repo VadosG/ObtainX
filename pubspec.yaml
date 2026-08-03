@@ -77,7 +77,7 @@ dependencies:
   shizuku_apk_installer: # TODO: Forked dependency; watch upstream for releases
     git:
       url: https://github.com/re7gog/shizuku_apk_installer
-      ref: 3ef7f8fbf904848d144304556b0f80c91fee82a5
+      ref: d9fb008fa4735a517986369b8aa7a025db9a43de
   markdown: ^7.3.1
   flutter_typeahead: ^6.0.0
   battery_plus: ^7.1.0

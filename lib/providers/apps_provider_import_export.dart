@@ -534,6 +534,11 @@ Map<String, dynamic> buildObtainXSettingsMap(
       fullSortColumn != obtainiumSettings['sortColumn']) {
     settingsObtainX['sortColumn'] = fullSortColumn;
   }
+  final dynamic fullInstallMethod = fullSettings['installMethod'];
+  if (fullInstallMethod != null &&
+      fullInstallMethod != obtainiumSettings['installMethod']) {
+    settingsObtainX['installMethod'] = fullInstallMethod;
+  }
 
   return settingsObtainX;
 }
@@ -578,6 +583,9 @@ void sanitizeExportedSettingsForObtainium(Map<String, dynamic> settings) {
   if (sortColumn is int &&
       (sortColumn < 0 || sortColumn >= obtainiumSortColumnCount)) {
     settings['sortColumn'] = SortColumnSettings.releaseDate.index;
+  }
+  if (settings['installMethod'] == 'dhizuku') {
+    settings['installMethod'] = 'shizuku';
   }
 }
 

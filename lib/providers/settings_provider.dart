@@ -73,7 +73,7 @@ enum SwipeAction { update, pin, appOptions, delete, open, appInfo, edit, none }
 // [AppsListGroupBy] is ObtainX's grouping model — it too persists under
 // upstream's `groupBy` key (its none/category/source names match upstream), with
 // `appType` as an ObtainX-only extra that Obtainium safely ignores.
-enum InstallerMode { system, shizuku, external }
+enum InstallerMode { system, shizuku, external, dhizuku }
 
 enum ColourSchemeMode { standard, vibrant, expressive, materialYou }
 
@@ -350,6 +350,7 @@ class SettingsProvider with ChangeNotifier {
       final String legacyStr = legacyMode.toString();
       final String converged = switch (legacyStr) {
         'shizuku' || '1' => InstallerMode.shizuku.name,
+        'dhizuku' => InstallerMode.dhizuku.name,
         'legacy' || '2' => InstallerMode.external.name,
         'stock' || '0' => InstallerMode.system.name,
         _ =>
@@ -484,6 +485,16 @@ class SettingsProvider with ChangeNotifier {
   set useShizuku(bool useShizuku) {
     installerMode = useShizuku
         ? InstallerMode.shizuku.name
+        : InstallerMode.system.name;
+  }
+
+  bool get useDhizuku {
+    return installerMode == InstallerMode.dhizuku.name;
+  }
+
+  set useDhizuku(bool useDhizuku) {
+    installerMode = useDhizuku
+        ? InstallerMode.dhizuku.name
         : InstallerMode.system.name;
   }
 

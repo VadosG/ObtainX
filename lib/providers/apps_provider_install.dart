@@ -19,10 +19,11 @@ import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/components/app_detail_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/installers/dhizuku_installer.dart';
+import 'package:obtainium/installers/external_installer.dart';
 import 'package:obtainium/installers/installer.dart';
 import 'package:obtainium/installers/shizuku_installer.dart';
 import 'package:obtainium/installers/stock_installer.dart';
-import 'package:obtainium/installers/external_installer.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/logs_provider.dart';
@@ -265,6 +266,8 @@ extension AppsProviderInstall on AppsProvider {
     switch (settingsProvider.installerMode) {
       case 'shizuku':
         return ShizukuInstaller(settingsProvider);
+      case 'dhizuku':
+        return DhizukuInstaller(settingsProvider);
       // Third-party installer. Value matches upstream Obtainium's
       // InstallerMode.external.name.
       case 'external':
