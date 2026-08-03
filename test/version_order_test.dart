@@ -16,6 +16,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/pages/app.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
@@ -256,6 +257,285 @@ void main() {
   );
 
   test(
+    'dot releases like 153.0 and 153.0.2 are recognized as distinct versions',
+    () {
+      expect(versionsEffectivelyEqual('153.0', '153.0.2'), false);
+      expect(versionsEffectivelyEqual('153.0.2', '153.0'), false);
+      expect(compareVersionsByNumericSegments('153.0', '153.0.2'), -1);
+      expect(compareVersionsByNumericSegments('153.0.2', '153.0'), 1);
+    },
+  );
+
+  test(
+    'dot-separated hash suffixes like 26.03 and 26.03.a4d75424 are recognized as distinct versions',
+    () {
+      expect(versionsEffectivelyEqual('26.03', '26.03.a4d75424'), false);
+      expect(versionsEffectivelyEqual('26.03.a4d75424', '26.03'), false);
+    },
+  );
+
+  test(
+    'zero-only trailing dot segments like 1.2 and 1.2.0 are effectively equal',
+    () {
+      expect(versionsEffectivelyEqual('1.2', '1.2.0'), true);
+      expect(versionsEffectivelyEqual('1.2.0', '1.2'), true);
+      expect(versionOrderIsUnclear('1.2', '1.2.0'), false);
+    },
+  );
+
+  test('leading v is ignored throughout version comparison', () {
+    expect(versionsEffectivelyEqual('v4.0.0', '4.0.0'), true);
+    expect(compareVersionsByNumericSegments('v4.0.0', '4.0.0'), 0);
+    expect(versionOrderIsUnclear('v4.0.0', '4.0.0'), false);
+    expect(
+      versionsEffectivelyEqual('2.9.8-preview-240', 'v2.9.8-Preview-240'),
+      true,
+    );
+    expect(
+      compareVersionsByNumericSegments(
+        '2.9.8-preview-240',
+        'v2.9.8-Preview-240',
+      ),
+      0,
+    );
+    expect(
+      versionOrderIsUnclear('2.9.8-preview-240', 'v2.9.8-Preview-240'),
+      false,
+    );
+    expect(isBareIntegerVersion('v4000'), true);
+    expect(compareReleaseDateVersionStrings('v2026-08-01', '2026-08-02'), -1);
+  });
+
+  test('stable release supersedes recognized matching prereleases', () {
+    for (final String prereleaseSuffix in <String>[
+      'preview',
+      'preview-123',
+      'alpha',
+      'alpha-2',
+      'beta',
+      'beta.3',
+      'rc',
+      'rc1',
+    ]) {
+      final String prereleaseVersion = '4.0.0-$prereleaseSuffix';
+      final VersionComparison? prereleaseToStableReconciliation =
+          reconcileVersionDifferences(prereleaseVersion, '4.0.0');
+      final VersionComparison? stableToPrereleaseReconciliation =
+          reconcileVersionDifferences('4.0.0', 'v$prereleaseVersion');
+      expect(versionsEffectivelyEqual(prereleaseVersion, '4.0.0'), false);
+      expect(versionsEffectivelyEqual('4.0.0', prereleaseVersion), false);
+      expect(prereleaseToStableReconciliation?.areEqual, false);
+      expect(prereleaseToStableReconciliation?.version, prereleaseVersion);
+      expect(stableToPrereleaseReconciliation?.areEqual, false);
+      expect(stableToPrereleaseReconciliation?.version, '4.0.0');
+      expect(compareVersionsByNumericSegments(prereleaseVersion, '4.0.0'), -1);
+      expect(compareVersionsByNumericSegments('4.0.0', prereleaseVersion), 1);
+      expect(compareVersionsByNumericSegments(prereleaseVersion, 'v4.0.0'), -1);
+      expect(compareVersionsByNumericSegments('v4.0.0', prereleaseVersion), 1);
+      expect(versionOrderIsUnclear(prereleaseVersion, '4.0.0'), false);
+    }
+    expect(
+      compareVersionsByNumericSegments(
+        '4.0.0-preview-233',
+        'v4.0.0-Preview-234',
+      ),
+      -1,
+    );
+
+    final App previewInstallation = App(
+      id: 'dev.bikram.obtainx',
+      url: 'https://github.com/bikram-agarwal/ObtainX',
+      author: 'Bikram Agarwal',
+      name: 'ObtainX',
+      installedVersion: '4.0.0-preview-233',
+      latestVersion: 'v4.0.0',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    expect(appHasActionableUpdate(previewInstallation), true);
+  });
+
+  test('pseudo display inference respects the selected detection mode', () {
+    AppInMemory appWithMode(String versionDetectionMode) {
+      return AppInMemory(
+        App(
+          id: 'app.example',
+          url: 'https://github.com/example/app',
+          author: 'Example',
+          name: 'Example',
+          installedVersion: 'source-build-106',
+          latestVersion: 'source-build-106',
+          apkUrls: const <MapEntry<String, String>>[],
+          preferredApkIndex: 0,
+          additionalSettings: <String, dynamic>{
+            'versionDetection': versionDetectionMode,
+          },
+          lastUpdateCheck: DateTime.now(),
+          pinned: false,
+        ),
+        null,
+        const FakePackageInfo(
+          packageName: 'app.example',
+          versionName: '9.18.50',
+          versionCode: 451,
+        ),
+        null,
+      );
+    }
+
+    expect(isInstalledVersionPseudoForDisplay(appWithMode('auto')), true);
+    expect(isInstalledVersionPseudoForDisplay(appWithMode('pseudo')), true);
+    expect(isInstalledVersionPseudoForDisplay(appWithMode('standard')), false);
+    expect(
+      isInstalledVersionPseudoForDisplay(appWithMode('versionCode')),
+      false,
+    );
+  });
+
+  test(
+    'stable install is not replaced by its latest preview in auto or standard mode',
+    () {
+      for (final String versionDetectionMode in <String>['auto', 'standard']) {
+        final AppsProvider appsProvider = AppsProvider(isBg: true);
+        addTearDown(appsProvider.dispose);
+        final App app = App(
+          id: 'dev.bikram.obtainx',
+          url: 'https://github.com/bikram-agarwal/ObtainX',
+          author: 'Bikram Agarwal',
+          name: 'ObtainX',
+          installedVersion: 'v2.9.8-Preview-245',
+          latestVersion: 'v2.9.8-Preview-245',
+          apkUrls: const <MapEntry<String, String>>[],
+          preferredApkIndex: 0,
+          additionalSettings: <String, dynamic>{
+            'versionDetection': versionDetectionMode,
+          },
+          lastUpdateCheck: DateTime.now(),
+          pinned: false,
+        );
+
+        expect(isVersionPseudo(app), false);
+
+        final App correctedApp =
+            appsProvider.getCorrectedInstallStatusAppIfPossible(
+              app,
+              const FakePackageInfo(
+                packageName: 'dev.bikram.obtainx',
+                versionName: '2.9.8',
+                versionCode: 3980,
+              ),
+            ) ??
+            app;
+
+        expect(
+          correctedApp.additionalSettings['versionDetection'],
+          versionDetectionMode,
+        );
+        expect(correctedApp.installedVersion, '2.9.8');
+        expect(correctedApp.latestVersion, 'v2.9.8-Preview-245');
+        expect(appHasActionableUpdate(correctedApp), false);
+      }
+    },
+  );
+
+  test(
+    'auto detection keeps two- and three-segment numeric versions standard',
+    () {
+      final AppsProvider appsProvider = AppsProvider(isBg: true);
+      final App app = App(
+        id: 'com.example.numericversion',
+        url: 'https://github.com/example/numeric-version',
+        author: 'Example',
+        name: 'Numeric Version',
+        installedVersion: '153.0',
+        latestVersion: '153.0.2',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      final App? correctedApp = appsProvider
+          .getCorrectedInstallStatusAppIfPossible(
+            app,
+            const FakePackageInfo(
+              packageName: 'com.example.numericversion',
+              versionName: '153.0',
+              versionCode: 15300,
+            ),
+          );
+      final App effectiveApp = correctedApp ?? app;
+
+      expect(effectiveApp.additionalSettings['versionDetection'], 'auto');
+      expect(effectiveApp.installedVersion, '153.0');
+      expect(effectiveApp.latestVersion, '153.0.2');
+      expect(appHasActionableUpdate(effectiveApp), true);
+    },
+  );
+
+  test(
+    'auto detection keeps a newer installed preview comparable to an older stable release',
+    () {
+      const String installedVersion = '2.9.8-Preview-241';
+      const String latestVersion = 'v2.9.7';
+      final AppsProvider appsProvider = AppsProvider(isBg: true);
+      addTearDown(appsProvider.dispose);
+      final App app = App(
+        id: 'dev.bikram.obtainx',
+        url: 'https://github.com/bikram-agarwal/ObtainX',
+        author: 'Bikram Agarwal',
+        name: 'ObtainX',
+        installedVersion: installedVersion,
+        latestVersion: latestVersion,
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+      const FakePackageInfo installedInfo = FakePackageInfo(
+        packageName: 'dev.bikram.obtainx',
+        versionName: installedVersion,
+        versionCode: 39803,
+      );
+
+      expect(
+        recognizedNumericReleaseVersionsAreComparable(
+          installedVersion,
+          latestVersion,
+        ),
+        true,
+      );
+      expect(
+        compareVersionsByNumericSegments(installedVersion, latestVersion),
+        1,
+      );
+      expect(
+        appsProvider.isVersionDetectionPossible(
+          AppInMemory(app, null, installedInfo, null),
+        ),
+        true,
+      );
+
+      final App effectiveApp =
+          appsProvider.getCorrectedInstallStatusAppIfPossible(
+            app,
+            installedInfo,
+          ) ??
+          app;
+
+      expect(effectiveApp.additionalSettings['versionDetection'], 'auto');
+      expect(effectiveApp.installedVersion, installedVersion);
+      expect(appHasActionableUpdate(effectiveApp), false);
+    },
+  );
+
+  test(
     'release package lookup only includes debug build when requested',
     () async {
       // The standalone packageNamesToTryForInstalledInfo helper was inlined into
@@ -422,6 +702,110 @@ void main() {
       expect(correctedApp!.installedVersion, '107');
       expect(correctedApp.latestVersion, '107');
       expect(correctedApp.additionalSettings['versionDetection'], 'pseudo');
+    },
+  );
+
+  test(
+    'legacy reset sentinel restores the device version for pseudo detection',
+    () {
+      final appsProvider = AppsProvider(isBg: true);
+      final app = App(
+        id: 'app.revanced.android.youtube',
+        url: 'https://github.com/LovecraftianGodsKiller/YouTube-Morphe',
+        author: 'LovecraftianGodsKiller',
+        name: 'YouTube-Morphe',
+        installedVersion: null,
+        latestVersion: '107',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: {
+          'versionDetection': 'pseudo',
+          installStatusResetKey: 123456,
+        },
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+        app,
+        const FakePackageInfo(
+          packageName: 'app.revanced.android.youtube',
+          versionName: '9.18.50',
+          versionCode: 106,
+        ),
+      );
+
+      expect(correctedApp, isNotNull);
+      expect(correctedApp!.installedVersion, '9.18.50');
+      expect(
+        correctedApp.additionalSettings.containsKey(installStatusResetKey),
+        false,
+      );
+    },
+  );
+
+  test('reset install status honors version-code detection', () {
+    final app = App(
+      id: 'app.example',
+      url: 'https://example.com/app',
+      author: 'Example',
+      name: 'Example',
+      installedVersion: 'release-107',
+      latestVersion: 'release-107',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: {
+        'versionDetection': 'versionCode',
+        'useVersionCodeAsOSVersion': true,
+        installStatusResetKey: 123456,
+      },
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    final resetApp = resetInstallStatusToDeviceVersion(
+      app,
+      const FakePackageInfo(
+        packageName: 'app.example',
+        versionName: '9.18.50',
+        versionCode: 106,
+      ),
+    );
+
+    expect(resetApp.installedVersion, '106');
+    expect(
+      resetApp.additionalSettings.containsKey(installStatusResetKey),
+      false,
+    );
+  });
+
+  test(
+    'reset removes the legacy sentinel when package info is unavailable',
+    () {
+      final app = App(
+        id: 'app.example',
+        url: 'https://example.com/app',
+        author: 'Example',
+        name: 'Example',
+        installedVersion: 'release-107',
+        latestVersion: 'release-107',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: {
+          'versionDetection': 'pseudo',
+          installStatusResetKey: 123456,
+        },
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      final resetApp = resetInstallStatusToDeviceVersion(app, null);
+
+      expect(resetApp.installedVersion, isNull);
+      expect(
+        resetApp.additionalSettings.containsKey(installStatusResetKey),
+        false,
+      );
     },
   );
 
@@ -1114,4 +1498,343 @@ This app description should not be included.
       );
     },
   );
+
+  test('install status reconciliation converges to a fixed point', () {
+    // getCorrectedInstallStatusAppIfPossible is applied on every load and save, so
+    // it has to settle: if pass N keeps producing a different app, the JSON is
+    // rewritten forever and the recorded install state depends on how many times
+    // the app list happened to refresh. (It is not idempotent after one pass —
+    // flipping to pseudo in step 4 legitimately lets step 1b adopt the device
+    // version on the next pass — so the property is convergence, not idempotence.)
+    final appsProvider = AppsProvider(isBg: true);
+    addTearDown(appsProvider.dispose);
+
+    const List<List<String>> cases = <List<String>>[
+      <String>['1.2.3', '1.2.4', '1.2.3'],
+      <String>['153.0', '153.0.2', '153.0'],
+      <String>[
+        '1.0.896819557.release',
+        '1.0.915254043.release',
+        '1.0.896819557.release',
+      ],
+      <String>['26.06.9df4c85', '26.06.8df31d', '26.06.9df4c85'],
+      <String>['106', '107', '9.18.50'],
+      <String>['1.2', '1.2.0', '1.2'],
+      <String>['2.0', '2.1', '451'],
+    ];
+
+    for (final List<String> testCase in cases) {
+      final String installed = testCase[0];
+      final String latest = testCase[1];
+      final String deviceVersion = testCase[2];
+      for (final String mode in <String>[
+        'auto',
+        'standard',
+        'pseudo',
+        'versionCode',
+      ]) {
+        App app = App(
+          id: 'app.example',
+          url: 'https://github.com/example/example',
+          author: 'example',
+          name: 'example',
+          installedVersion: installed,
+          latestVersion: latest,
+          apkUrls: const <MapEntry<String, String>>[],
+          preferredApkIndex: 0,
+          additionalSettings: <String, dynamic>{'versionDetection': mode},
+          lastUpdateCheck: DateTime.now(),
+          pinned: false,
+        );
+        final info = FakePackageInfo(
+          packageName: 'app.example',
+          versionName: deviceVersion,
+          versionCode: 451,
+        );
+
+        var passes = 0;
+        while (passes < 6) {
+          final App? corrected = appsProvider
+              .getCorrectedInstallStatusAppIfPossible(app, info);
+          if (corrected == null) break;
+          app = corrected;
+          passes++;
+        }
+        expect(
+          passes,
+          lessThan(6),
+          reason:
+              'no fixed point for ($installed → $latest, device $deviceVersion) in $mode',
+        );
+      }
+    }
+  });
+
+  // Regression: version reconciliation must have exactly one implementation.
+  // A second copy used to exist as an extension member on AppsProvider, which
+  // shadowed the top-level function for every production caller and lacked the
+  // shape fallback, so `.release`-style versions came back unreconcilable.
+  test('reconciliation relates shape-identical non-standard versions', () {
+    const installed = '1.0.896819557.release';
+    const latest = '1.0.915254043.release';
+
+    final reconciled = reconcileVersionDifferences(installed, latest);
+    expect(reconciled, isNotNull);
+    expect(reconciled!.areEqual, false);
+    expect(reconciled.version, installed);
+
+    // Same for Google-style long release versions.
+    final google = reconcileVersionDifferences(
+      '2026.03.12.885261117.2-release',
+      '2026.04.27.917519149.2-release',
+    );
+    expect(google?.areEqual, false);
+  });
+
+  test(
+    'auto detection survives non-standard release suffixes instead of going pseudo',
+    () {
+      final appsProvider = AppsProvider(isBg: true);
+      addTearDown(appsProvider.dispose);
+      const installed = '1.0.896819557.release';
+      const latest = '1.0.915254043.release';
+      final app = App(
+        id: 'com.example.release',
+        // A source WITHOUT naiveStandardVersionDetection, so reconciliation is
+        // the only thing keeping version detection alive.
+        url: 'https://github.com/example/release-suffix',
+        author: 'example',
+        name: 'Release Suffix',
+        installedVersion: installed,
+        latestVersion: latest,
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: <String, dynamic>{'versionDetection': 'auto'},
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+      const info = FakePackageInfo(
+        packageName: 'com.example.release',
+        versionName: installed,
+        versionCode: 896819557,
+      );
+
+      expect(
+        appsProvider.isVersionDetectionPossible(
+          AppInMemory(app, null, info, null),
+        ),
+        true,
+      );
+      expect(appHasActionableUpdate(app), true);
+
+      final App? corrected = appsProvider
+          .getCorrectedInstallStatusAppIfPossible(app, info);
+      final App effective = corrected ?? app;
+
+      // The pending update must survive reconciliation: no flip to pseudo, no
+      // rewriting installedVersion to the release that was never installed.
+      expect(effective.additionalSettings['versionDetection'], 'auto');
+      expect(effective.installedVersion, installed);
+      expect(appHasActionableUpdate(effective), true);
+    },
+  );
+
+  test('version detection mode parses every stored encoding', () {
+    expect(VersionDetectionMode.fromStored('auto'), VersionDetectionMode.auto);
+    expect(
+      VersionDetectionMode.fromStored('standard'),
+      VersionDetectionMode.standard,
+    );
+    expect(
+      VersionDetectionMode.fromStored('pseudo'),
+      VersionDetectionMode.pseudo,
+    );
+    expect(
+      VersionDetectionMode.fromStored('versionCode'),
+      VersionDetectionMode.versionCode,
+    );
+    // Legacy encodings still reachable when App.fromJson falls back to
+    // unmigrated JSON.
+    expect(VersionDetectionMode.fromStored(null), VersionDetectionMode.auto);
+    expect(VersionDetectionMode.fromStored(true), VersionDetectionMode.auto);
+    expect(VersionDetectionMode.fromStored(false), VersionDetectionMode.pseudo);
+    expect(
+      VersionDetectionMode.fromStored('standardVersionDetection'),
+      VersionDetectionMode.auto,
+    );
+    expect(
+      VersionDetectionMode.fromStored('noVersionDetection'),
+      VersionDetectionMode.pseudo,
+    );
+    expect(
+      VersionDetectionMode.fromStored('releaseDateAsVersion'),
+      VersionDetectionMode.pseudo,
+    );
+  });
+
+  test(
+    'version-code mode is read from either the mode or its derived bool',
+    () {
+      App app(Map<String, dynamic> settings) => App(
+        id: 'app.example',
+        url: 'https://github.com/example/example',
+        author: 'example',
+        name: 'example',
+        installedVersion: '123',
+        latestVersion: '124',
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: settings,
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      // Both signals in sync.
+      expect(
+        app(const {
+          'versionDetection': 'versionCode',
+          'useVersionCodeAsOSVersion': true,
+        }).usesVersionCodeAsOsVersion,
+        true,
+      );
+      // Out of sync in either direction still means version-code mode, so the
+      // displayed version and install-status reconciliation cannot disagree.
+      expect(
+        app(const {
+          'versionDetection': 'versionCode',
+        }).usesVersionCodeAsOsVersion,
+        true,
+      );
+      expect(
+        app(const {
+          'versionDetection': 'auto',
+          'useVersionCodeAsOSVersion': true,
+        }).usesVersionCodeAsOsVersion,
+        true,
+      );
+      expect(
+        app(const {'versionDetection': 'auto'}).usesVersionCodeAsOsVersion,
+        false,
+      );
+    },
+  );
+
+  test(
+    'normalizing version detection settings keeps the derived bool honest',
+    () {
+      // Stored settings: a stale boolean pulls the mode to versionCode.
+      final stored = <String, dynamic>{
+        'versionDetection': 'auto',
+        'useVersionCodeAsOSVersion': true,
+      };
+      normalizeVersionDetectionSettings(stored, promoteLegacyBoolean: true);
+      expect(stored['versionDetection'], 'versionCode');
+      expect(stored['useVersionCodeAsOSVersion'], true);
+
+      // Post-form-merge: the dropdown wins, so the user can leave versionCode mode
+      // even though the stale boolean is still in the map.
+      final edited = <String, dynamic>{
+        'versionDetection': 'auto',
+        'useVersionCodeAsOSVersion': true,
+      };
+      normalizeVersionDetectionSettings(edited);
+      expect(edited['versionDetection'], 'auto');
+      expect(edited['useVersionCodeAsOSVersion'], false);
+
+      // Legacy bools are canonicalised to mode keys, never left as bools.
+      final legacy = <String, dynamic>{'versionDetection': false};
+      normalizeVersionDetectionSettings(legacy);
+      expect(legacy['versionDetection'], 'pseudo');
+    },
+  );
+
+  test(
+    'version-code mode never reports a version code as newer than a version',
+    () {
+      App app({required String installed, required String latest}) => App(
+        id: 'app.example',
+        url: 'https://github.com/example/example',
+        author: 'example',
+        name: 'example',
+        installedVersion: installed,
+        latestVersion: latest,
+        apkUrls: const <MapEntry<String, String>>[],
+        preferredApkIndex: 0,
+        additionalSettings: const <String, dynamic>{
+          'versionDetection': 'versionCode',
+          'useVersionCodeAsOSVersion': true,
+        },
+        lastUpdateCheck: DateTime.now(),
+        pinned: false,
+      );
+
+      // The broken case: device versionCode 123 vs a source semver. Digit-wise
+      // ordering used to make this "installed is newer" — up to date forever.
+      final mismatched = app(installed: '123', latest: '1.2.4');
+      expect(versionCodeModeCannotCompare(mismatched), true);
+      expect(appIsUpToDateForFiltering(mismatched), false);
+      // Unorderable, so: visible to the user, but never auto-installed.
+      expect(versionOrderUncertainUpdate(mismatched), true);
+      expect(appHasActionableUpdate(mismatched), false);
+      expect(appUpdateIsUserVisible(mismatched), false);
+      expect(
+        appUpdateIsUserVisible(mismatched, includeVersionOrderUncertain: true),
+        true,
+      );
+
+      // Correctly configured: source publishes version codes too, so ordering works.
+      final ordered = app(installed: '123', latest: '124');
+      expect(versionCodeModeCannotCompare(ordered), false);
+      expect(appHasActionableUpdate(ordered), true);
+      expect(appIsUpToDateForFiltering(ordered), false);
+
+      final upToDate = app(installed: '124', latest: '124');
+      expect(appHasActionableUpdate(upToDate), false);
+      expect(appIsUpToDateForFiltering(upToDate), true);
+    },
+  );
+
+  test('appUpdateIsUserVisible agrees with the list UI, not with string diffs', () {
+    App app({
+      String? installed = '1.2.3',
+      String latest = '1.2.4',
+      Map<String, dynamic> settings = const <String, dynamic>{},
+    }) => App(
+      id: 'app.example',
+      url: 'https://github.com/example/example',
+      author: 'example',
+      name: 'example',
+      installedVersion: installed,
+      latestVersion: latest,
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: settings,
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    // Genuinely behind.
+    expect(appUpdateIsUserVisible(app()), true);
+    // Version string changed but denotes the same build (build-metadata suffix).
+    expect(appUpdateIsUserVisible(app(latest: '1.2.3-2')), false);
+    // Source published something older than what is installed.
+    expect(appUpdateIsUserVisible(app(latest: '1.1.0')), false);
+    // User skipped this exact release.
+    expect(
+      appUpdateIsUserVisible(
+        app(settings: const {'skippedLatestVersion': '1.2.4'}),
+      ),
+      false,
+    );
+    // Never installed: still installable.
+    expect(appUpdateIsUserVisible(app(installed: null)), true);
+    // Ambiguous ordering: notifications surface it, background install must not.
+    final ambiguous = app(installed: '26.06.9df4c85', latest: '26.06.8df31d');
+    expect(versionOrderUncertainUpdate(ambiguous), true);
+    expect(appUpdateIsUserVisible(ambiguous), false);
+    expect(
+      appUpdateIsUserVisible(ambiguous, includeVersionOrderUncertain: true),
+      true,
+    );
+  });
 }

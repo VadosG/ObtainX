@@ -13,7 +13,6 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_archive/flutter_archive.dart';
 import 'package:flutter_fgbg/flutter_fgbg.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/app_sources/github.dart';
@@ -32,6 +31,7 @@ import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/providers/virustotal_provider.dart';
 import 'package:obtainium/theme/app_dialog_theme.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -61,6 +61,20 @@ const int _bgInstallConfirmAttempts = 20; // 20 × 500ms = 10 seconds
 @visibleForTesting
 bool isCleartextDownloadUrl(String url) {
   return Uri.tryParse(url)?.scheme.toLowerCase() == 'http';
+}
+
+@visibleForTesting
+bool shouldRetryGitHubDownloadWithoutAuthorization({
+  required AppSource source,
+  required Map<String, String>? headers,
+  required Object error,
+}) {
+  if (source is! GitHub ||
+      headers?[HttpHeaders.authorizationHeader]?.isNotEmpty != true ||
+      error is! ObtainiumError) {
+    return false;
+  }
+  return error.data['statusCode'] == HttpStatus.unauthorized;
 }
 
 /// Processes completed downloads one at a time, in the order they finish.
@@ -415,61 +429,95 @@ extension AppsProviderInstall on AppsProvider {
         downloadUrl,
         forAPKDownload: true,
       );
-      var downloadedFile = await downloadFileWithRetry(
-        downloadUrl,
-        fileNameNoExt,
-        source.urlsAlwaysHaveExtension,
-        headers: headers,
-        (double? progress, [int? received, int? total]) {
-          final int? prog = progress?.ceil();
-          if (apps[app.id] != null) {
-            apps[app.id]!.downloadReceivedBytes = received;
-            apps[app.id]!.downloadTotalBytes = total;
-            apps[app.id]!.downloadProgress = progress;
-            // Only rebuild listeners when the displayed (integer) percent
-            // actually changes, to avoid redundant whole-page rebuilds on
-            // every sub-percent download tick.
-            if (prevProg != prog) {
-              notify();
-            }
+      void updateDownloadProgress(
+        double? progress, [
+        int? received,
+        int? total,
+      ]) {
+        final int? prog = progress?.ceil();
+        if (apps[app.id] != null) {
+          apps[app.id]!.downloadReceivedBytes = received;
+          apps[app.id]!.downloadTotalBytes = total;
+          apps[app.id]!.downloadProgress = progress;
+          // Only rebuild listeners when the displayed (integer) percent
+          // actually changes, to avoid redundant whole-page rebuilds on
+          // every sub-percent download tick.
+          if (prevProg != prog) {
+            notify();
           }
-          notif = DownloadNotification(
-            app.finalName,
-            prog ?? _downloadCompleteProgress,
-            // Only foreground downloads are cancellable from the notification;
-            // the background isolate's token isn't reachable from the main
-            // isolate that handles the action tap.
-            appId: isBg ? null : app.id,
-            receivedBytes: received,
-            totalBytes: total,
-          );
-          if (prog != null && prevProg != prog) {
-            if (nativeDownloadServiceStarted) {
-              unawaited(
-                NativeFeatures.showDownloadProgressNotification(
-                  id: notif.id,
-                  appId: app.id,
-                  title: notif.title,
-                  message: notif.message,
-                  channelCode: notif.channelCode,
-                  progressPercent: prog,
-                  indeterminate: false,
-                  cancelLabel: tr('cancel'),
-                  shortCriticalText: '$prog%',
-                ),
-              );
-            } else {
-              unawaited(notificationsProvider?.notify(notif));
-            }
+        }
+        notif = DownloadNotification(
+          app.finalName,
+          prog ?? _downloadCompleteProgress,
+          // Only foreground downloads are cancellable from the notification;
+          // the background isolate's token isn't reachable from the main
+          // isolate that handles the action tap.
+          appId: isBg ? null : app.id,
+          receivedBytes: received,
+          totalBytes: total,
+        );
+        if (prog != null &&
+            (prevProg == null ||
+                (prog - prevProg!).abs() >= 5 ||
+                prog == 100)) {
+          if (nativeDownloadServiceStarted) {
+            unawaited(
+              NativeFeatures.showDownloadProgressNotification(
+                id: notif.id,
+                appId: app.id,
+                title: notif.title,
+                message: notif.message,
+                channelCode: notif.channelCode,
+                progressPercent: prog,
+                indeterminate: false,
+                cancelLabel: tr('cancel'),
+                shortCriticalText: '$prog%',
+              ),
+            );
+          } else {
+            unawaited(notificationsProvider?.notify(notif));
           }
           prevProg = prog;
-        },
-        this.apkDir.path,
-        useExisting: useExisting,
-        allowInsecure: app.settings.getBool('allowInsecure'),
-        logs: logs,
-        cancellationToken: cancellationToken,
-      );
+        }
+      }
+
+      Future<File> runDownload(Map<String, String>? requestHeaders) {
+        return downloadFileWithRetry(
+          downloadUrl,
+          fileNameNoExt,
+          source.urlsAlwaysHaveExtension,
+          updateDownloadProgress,
+          this.apkDir.path,
+          useExisting: useExisting,
+          headers: requestHeaders,
+          allowInsecure: app.settings.getBool('allowInsecure'),
+          logs: logs,
+          cancellationToken: cancellationToken,
+        );
+      }
+
+      File downloadedFile;
+      try {
+        downloadedFile = await runDownload(headers);
+      } catch (error) {
+        if (!shouldRetryGitHubDownloadWithoutAuthorization(
+          source: source,
+          headers: headers,
+          error: error,
+        )) {
+          rethrow;
+        }
+        final Map<String, String> unauthenticatedHeaders =
+            Map<String, String>.from(headers!)
+              ..remove(HttpHeaders.authorizationHeader);
+        unawaited(
+          logs.add(
+            'GitHub asset download returned 401 with stored PAT. Retrying without authentication.',
+            level: LogLevel.warning,
+          ),
+        );
+        downloadedFile = await runDownload(unauthenticatedHeaders);
+      }
       if (apps[app.id] != null) {
         apps[app.id]!.downloadProgress = _remainingStepsProgress.toDouble();
         notify();
@@ -738,6 +786,7 @@ extension AppsProviderInstall on AppsProvider {
     bool needsBGWorkaround = false,
     Map<String, dynamic> installOptions = const {},
     bool skipPreInstallVerification = false,
+    ThemeData? toastTheme,
 
     /// See [installApk]'s param of the same name. Verification/scanning runs
     /// once here against the container before any split part is installed.
@@ -750,6 +799,7 @@ extension AppsProviderInstall on AppsProvider {
         appId: dir.appId,
         primaryFile: dir.file,
         showMalwareScanDialog: showMalwareScanDialog,
+        toastTheme: toastTheme,
         cleanupOnSkip: () {
           try {
             if (dir.file.existsSync()) dir.file.deleteSync();
@@ -830,6 +880,7 @@ extension AppsProviderInstall on AppsProvider {
               .toList(),
           // Container already verified/scanned above.
           skipMalwareScan: true,
+          toastTheme: toastTheme,
           // The bundle itself is what gets saved (below); don't also persist
           // the extracted primary APK under the same release asset name.
           skipApkSaveFolderPersistForPrimaryApk: true,
@@ -864,6 +915,7 @@ extension AppsProviderInstall on AppsProvider {
     /// Whether a build-verification/VirusTotal result can be shown as a dialog
     /// (someone's watching) or must skip the app and notify (background/silent).
     bool showMalwareScanDialog = false,
+    ThemeData? toastTheme,
 
     /// Set by [installApkDir] for a split APK — the container was already
     /// verified/scanned once, so re-running per part would waste effort and the
@@ -890,6 +942,7 @@ extension AppsProviderInstall on AppsProvider {
         appId: file.appId,
         primaryFile: file.file,
         showMalwareScanDialog: showMalwareScanDialog,
+        toastTheme: toastTheme,
         cleanupOnSkip: () {
           try {
             if (file.file.existsSync()) file.file.deleteSync();
@@ -902,7 +955,11 @@ extension AppsProviderInstall on AppsProvider {
       if (!proceed) return false;
     }
     if (firstInstallNotificationsProvider != null) {
-      await _shareWithVerifiedApps(file, firstInstallNotificationsProvider);
+      await _shareWithVerifiedApps(
+        file,
+        firstInstallNotificationsProvider,
+        toastTheme: toastTheme,
+      );
     }
     final newInfo = await packageManager.getPackageArchiveInfo(
       archiveFilePath: file.file.path,
@@ -1011,8 +1068,9 @@ extension AppsProviderInstall on AppsProvider {
 
   Future<void> _shareWithVerifiedApps(
     DownloadedApk file,
-    NotificationsProvider notificationsProvider,
-  ) async {
+    NotificationsProvider notificationsProvider, {
+    ThemeData? toastTheme,
+  }) async {
     if (!settingsProvider.beforeNewInstallsShareToAppVerifier) return;
     // Intentionally does NOT gate on whether a known verifier app is installed.
     // Package-visibility rules (Android 11+) hide those packages from
@@ -1025,11 +1083,11 @@ extension AppsProviderInstall on AppsProvider {
       file.file.path,
       mimeType: 'application/vnd.android.package-archive',
     );
-    unawaited(
-      Fluttertoast.showToast(
-        msg: tr('appVerifierInstructionToast'),
-        toastLength: Toast.LENGTH_LONG,
-      ),
+    showAppToast(
+      tr('appVerifierInstructionToast'),
+      type: ToastType.info,
+      duration: const Duration(seconds: 4),
+      theme: toastTheme,
     );
     try {
       await SharePlus.instance.share(ShareParams(files: [f]));
@@ -1306,6 +1364,7 @@ extension AppsProviderInstall on AppsProvider {
           errors,
           allowUserInteraction,
           notificationsProvider,
+          dialogTheme,
         );
       } on MalwareScanBlockedError catch (error) {
         malwareScanSkips.add((
@@ -1328,6 +1387,7 @@ extension AppsProviderInstall on AppsProvider {
               notificationsProvider,
               useExisting,
               errors,
+              dialogTheme,
             ),
           );
         }
@@ -1342,6 +1402,7 @@ extension AppsProviderInstall on AppsProvider {
                 notificationsProvider,
                 useExisting,
                 errors,
+                dialogTheme,
               ),
             ),
         ];
@@ -1499,6 +1560,7 @@ extension AppsProviderInstall on AppsProvider {
     MultiAppMultiError errors,
     bool allowUserInteraction,
     NotificationsProvider? notificationsProvider,
+    ThemeData? toastTheme,
   ) async {
     final appEntry = apps[id];
     if (appEntry == null) return;
@@ -1587,6 +1649,7 @@ extension AppsProviderInstall on AppsProvider {
               'shizukuPretendToBeGooglePlay': shizukuPretendToBeGooglePlay,
             },
             showMalwareScanDialog: allowUserInteraction,
+            toastTheme: toastTheme,
           );
         }
       } else {
@@ -1650,6 +1713,7 @@ extension AppsProviderInstall on AppsProvider {
               'shizukuPretendToBeGooglePlay': shizukuPretendToBeGooglePlay,
             },
             showMalwareScanDialog: allowUserInteraction,
+            toastTheme: toastTheme,
           );
         }
       }
@@ -1691,6 +1755,7 @@ extension AppsProviderInstall on AppsProvider {
     NotificationsProvider? notificationsProvider,
     bool useExisting,
     MultiAppMultiError errors,
+    ThemeData? toastTheme,
   ) async {
     bool willBeSilent = false;
     DownloadedApk? downloadedFile;
@@ -1717,7 +1782,7 @@ extension AppsProviderInstall on AppsProvider {
       notify();
       willBeSilent = await canInstallSilently(apps[id]!.app);
       final installer = getInstaller();
-      await installer.ensurePermission();
+      await installer.ensurePermission(toastTheme: toastTheme);
       // Only the stock installer surfaces a system install prompt that pulls the
       // user away; wait for them to return before proceeding.
       if (!willBeSilent &&
@@ -1906,14 +1971,15 @@ extension AppsProviderInstall on AppsProvider {
     String? detail,
     String? reportUrl,
     required bool showMalwareScanDialog,
+    ThemeData? toastTheme,
     required void Function() cleanupOnSkip,
   }) async {
     if (status == malwareScanStatusClean) {
       if (showMalwareScanDialog) {
-        unawaited(
-          Fluttertoast.showToast(
-            msg: tr('malwareScanCleanToast', args: [app.finalName]),
-          ),
+        showAppToast(
+          tr('malwareScanCleanToast', args: [app.finalName]),
+          type: ToastType.success,
+          theme: toastTheme,
         );
       }
       return true;
@@ -2043,11 +2109,14 @@ extension AppsProviderInstall on AppsProvider {
     }
     try {
       final App? appForSave = apps[dir.appId]?.app;
-      final Uri? resolvedApkSaveUri = await settingsProvider.getApkSaveDir(
-        warnIfInaccessible: true,
-      );
+      final bool saveApkCopiesEnabled =
+          settingsProvider.saveDownloadedApkCopies;
+      final Uri? resolvedApkSaveUri = saveApkCopiesEnabled
+          ? await settingsProvider.getApkSaveDir(warnIfInaccessible: true)
+          : null;
       var bundleCopiedOk = false;
-      if (appForSave != null &&
+      if (saveApkCopiesEnabled &&
+          appForSave != null &&
           resolvedApkSaveUri != null &&
           dir.file.existsSync()) {
         try {
@@ -2063,23 +2132,24 @@ extension AppsProviderInstall on AppsProvider {
               level: LogLevel.error,
             ),
           );
-          unawaited(Fluttertoast.showToast(msg: tr('apkSaveFolderCopyFailed')));
+          showAppToast(tr('apkSaveFolderCopyFailed'), type: ToastType.error);
         }
       }
       final bool skipLatest =
           appForSave != null && isSkipActiveForCurrentLatest(appForSave);
-      final bool hasSaveFolder = resolvedApkSaveUri != null;
       final bool shouldDeleteBundle;
-      if (hasSaveFolder && appForSave != null && dir.file.existsSync()) {
+      if (!saveApkCopiesEnabled) {
+        shouldDeleteBundle = somethingInstalled || skipLatest;
+      } else if (resolvedApkSaveUri != null &&
+          appForSave != null &&
+          dir.file.existsSync()) {
         // A configured, reachable save folder: only delete once the copy landed.
         shouldDeleteBundle =
             bundleCopiedOk && (somethingInstalled || skipLatest);
-      } else if (resolvedApkSaveUri == null) {
+      } else {
         // Feature on but folder unreachable: keep the bundle after a successful
         // install (so the user can still recover it), delete only when skipped.
         shouldDeleteBundle = somethingInstalled ? false : skipLatest;
-      } else {
-        shouldDeleteBundle = somethingInstalled || skipLatest;
       }
       if (shouldDeleteBundle && dir.file.existsSync()) {
         try {
@@ -2127,7 +2197,7 @@ extension AppsProviderInstall on AppsProvider {
               level: LogLevel.error,
             ),
           );
-          unawaited(Fluttertoast.showToast(msg: tr('apkSaveFolderCopyFailed')));
+          showAppToast(tr('apkSaveFolderCopyFailed'), type: ToastType.error);
         }
       }
       // hasSaveFolder is always true here (caller only invokes with a resolved
@@ -2158,6 +2228,7 @@ extension AppsProviderInstall on AppsProvider {
     required String appId,
     required File primaryFile,
     required bool showMalwareScanDialog,
+    ThemeData? toastTheme,
     required void Function() cleanupOnSkip,
   }) async {
     final AppInMemory? appInMemory = apps[appId];
@@ -2188,7 +2259,7 @@ extension AppsProviderInstall on AppsProvider {
       if (apps[appId] != null) {
         apps[appId]!.app = app;
       }
-      await saveApps([app]);
+      await saveApps([app], updateInstalledInfo: false);
       if (source.shouldEnforceAttestations(
             app.additionalSettings,
             settingsProvider,
@@ -2219,17 +2290,18 @@ extension AppsProviderInstall on AppsProvider {
       if (apps[appId] != null) {
         apps[appId]!.app = app;
       }
-      await saveApps([app]);
       apps[appId]?.downloadProgress = scan.status != malwareScanStatusClean
           ? _flaggedProgressSentinel
           : _installingProgressSentinel;
       notify();
+      await saveApps([app], updateInstalledInfo: false);
       final bool proceed = await _handleMalwareScanResult(
         app: app,
         status: scan.status!,
         detail: scan.detail,
         reportUrl: scan.reportUrl,
         showMalwareScanDialog: showMalwareScanDialog,
+        toastTheme: toastTheme,
         cleanupOnSkip: cleanupOnSkip,
       );
       if (!proceed) return false;

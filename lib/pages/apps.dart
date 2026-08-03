@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
+import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/bulk_category_editor.dart';
@@ -34,7 +35,8 @@ import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/empty_state_illustration.dart';
 import 'package:obtainium/components/rippling_wavy_progress/circular.dart';
 import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
-import 'package:obtainium/components/ui_widgets.dart' show ActionListTile;
+import 'package:obtainium/components/ui_widgets.dart'
+    show ActionListTile, AppSwitch, AppSwitchListTile;
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/date_time_format.dart';
 import 'package:obtainium/main.dart';
@@ -67,6 +69,20 @@ enum CategoryFilterIntent { neutral, include, exclude }
 enum CategoryFilterMatchMode { any, all }
 
 const int _maxFolderNameLength = 20;
+
+class _HideWhileKeyboardOpen extends StatelessWidget {
+  const _HideWhileKeyboardOpen({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+      return const SizedBox.shrink();
+    }
+    return child;
+  }
+}
 
 CategoryFilterIntent nextCategoryFilterIntent(CategoryFilterIntent intent) =>
     switch (intent) {
@@ -715,6 +731,8 @@ class _AppListItem extends StatelessWidget {
     required this.showAppTypeBadge,
     required this.showTrackedStoreBadge,
     required this.showCategoriesBadge,
+    required this.showAuthorBadge,
+    required this.showVersionBadge,
     required this.showCheckmark,
     this.sourceHost,
     this.itemBorderRadius,
@@ -732,6 +750,8 @@ class _AppListItem extends StatelessWidget {
   final bool showAppTypeBadge;
   final bool showTrackedStoreBadge;
   final bool showCategoriesBadge;
+  final bool showAuthorBadge;
+  final bool showVersionBadge;
   final String? sourceHost;
   final BorderRadius? itemBorderRadius;
   final bool showCheckmark;
@@ -874,7 +894,9 @@ class _AppListItem extends StatelessWidget {
         (!skipActive && hasUpdate) ||
         (!skipActive && !hasUpdate && hasUncertainUpdate);
 
-    final Widget? trailingRow = (hideVersionAndChangelog && !hasTrailingWidgets)
+    final bool showVersionColumn = !hideVersionAndChangelog && showVersionBadge;
+
+    final Widget? trailingRow = (!showVersionColumn && !hasTrailingWidgets)
         ? null
         : ConstrainedBox(
             // ListTile measures trailing before title/subtitle. Bound the
@@ -885,7 +907,7 @@ class _AppListItem extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                if (!hideVersionAndChangelog)
+                if (showVersionColumn)
                   Flexible(
                     child: GestureDetector(
                       onTap: showChangesFn,
@@ -936,7 +958,7 @@ class _AppListItem extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (!hideVersionAndChangelog && hasTrailingWidgets)
+                if (showVersionColumn && hasTrailingWidgets)
                   const SizedBox(width: 5),
                 if (skipActive) buildSkippedVersionIcon(),
                 if (!skipActive && hasUpdate) buildUpdateButton(),
@@ -1216,14 +1238,18 @@ class _AppListItem extends StatelessWidget {
                       ),
                     ],
                   ),
-                  subtitle: Text(
-                    tr('byX', args: [app.author]),
-                    maxLines: 1,
-                    style: TextStyle(
-                      overflow: TextOverflow.ellipsis,
-                      fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
+                  subtitle: showAuthorBadge
+                      ? Text(
+                          tr('byX', args: [app.author]),
+                          maxLines: 1,
+                          style: TextStyle(
+                            overflow: TextOverflow.ellipsis,
+                            fontWeight: pinned
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        )
+                      : null,
                   trailing: downloadProgress != null
                       ? buildDownloadProgressControl()
                       : trailingRow,
@@ -1748,14 +1774,60 @@ String? _rawFileUrlFromRepositoryPageUrl(String url) {
   return null;
 }
 
+String? _gitlabReleaseApiUrlFromUrl(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri == null) return null;
+  final path = uri.path;
+  if (path.contains('/api/v4/projects/')) {
+    return url;
+  }
+  final segments = uri.pathSegments;
+  final dashIndex = segments.indexOf('-');
+  if (dashIndex > 0 &&
+      segments.length > dashIndex + 1 &&
+      segments[dashIndex + 1] == 'releases') {
+    final projectPathEncoded = segments
+        .sublist(0, dashIndex)
+        .map(Uri.encodeComponent)
+        .join('%2F');
+    final String apiBasePath = '/api/v4/projects/$projectPathEncoded/releases';
+    if (segments.length > dashIndex + 2) {
+      final tagName = segments.sublist(dashIndex + 2).join('/');
+      return uri
+          .replace(
+            path: '$apiBasePath/${Uri.encodeComponent(tagName)}',
+            queryParameters: null,
+          )
+          .toString();
+    }
+    return uri.replace(path: apiBasePath, queryParameters: null).toString();
+  }
+  return null;
+}
+
 Future<String?> _loadLinkedChangeLog(
   AppSource appSource,
   App app,
   String changesUrl,
 ) async {
   final githubReleaseApiUrl = _githubReleaseApiUrlFromUrl(changesUrl);
+  var gitlabReleaseApiUrl = _gitlabReleaseApiUrlFromUrl(changesUrl);
+
+  if (gitlabReleaseApiUrl != null && appSource is GitLab) {
+    final String? pat = await appSource.getPATIfAny(app.additionalSettings);
+    if (pat != null && pat.isNotEmpty) {
+      final uri = Uri.parse(gitlabReleaseApiUrl);
+      final newQueryParams = Map<String, String>.from(uri.queryParameters);
+      newQueryParams['private_token'] = pat;
+      gitlabReleaseApiUrl = uri
+          .replace(queryParameters: newQueryParams)
+          .toString();
+    }
+  }
+
   final requestUrl =
       githubReleaseApiUrl ??
+      gitlabReleaseApiUrl ??
       _rawFileUrlFromRepositoryPageUrl(changesUrl) ??
       changesUrl;
   final response = await appSource.sourceRequest(
@@ -1769,6 +1841,21 @@ Future<String?> _loadLinkedChangeLog(
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) {
       return (decoded['body'] ?? '').toString();
+    }
+  }
+  if (gitlabReleaseApiUrl != null) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is List && decoded.isNotEmpty) {
+        final first = decoded.first;
+        if (first is Map<String, dynamic>) {
+          return (first['description'] ?? first['message'] ?? '').toString();
+        }
+      } else if (decoded is Map<String, dynamic>) {
+        return (decoded['description'] ?? decoded['message'] ?? '').toString();
+      }
+    } catch (_) {
+      return null;
     }
   }
   if (appSource is APKMirror) {
@@ -2151,7 +2238,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  sectionLabel(tr('showBadges')),
+                  sectionLabel(tr('showInfo')),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -2183,6 +2270,26 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                         selected: settingsProvider.showCategoriesBadge,
                         onSelected: (value) {
                           settingsProvider.showCategoriesBadge = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      FilterChip(
+                        avatar: const Icon(Icons.badge_rounded, size: 16),
+                        showCheckmark: false,
+                        label: Text(tr('showAuthorBadge')),
+                        selected: settingsProvider.showAuthorBadge,
+                        onSelected: (value) {
+                          settingsProvider.showAuthorBadge = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      FilterChip(
+                        avatar: const Icon(Icons.sell_rounded, size: 16),
+                        showCheckmark: false,
+                        label: Text(tr('showVersionBadge')),
+                        selected: settingsProvider.showVersionBadge,
+                        onSelected: (value) {
+                          settingsProvider.showVersionBadge = value;
                           setSheetState(() {});
                         },
                       ),
@@ -2341,7 +2448,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
               ),
               Divider(color: colorScheme.outlineVariant),
               const SizedBox(height: 4),
-              SwitchListTile(
+              AppSwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(tr('pinUpdates')),
                 value: effectivePinUpdates,
@@ -2350,7 +2457,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                   setSheetState(() {});
                 },
               ),
-              SwitchListTile(
+              AppSwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(tr('moveNonInstalledAppsToBottom')),
                 value: effectiveBuryNonInstalled,
@@ -2375,7 +2482,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                         message: tr('showFolderedAppsOnMainPageTooltip'),
                         padding: EdgeInsets.zero,
                       ),
-                      Switch(
+                      AppSwitch(
                         value: settingsProvider.showFolderedAppsOnMainPage,
                         onChanged: (value) {
                           settingsProvider.showFolderedAppsOnMainPage = value;
@@ -2568,91 +2675,101 @@ class AppsPageState extends State<AppsPage> {
   Widget _buildAppsPageSideFabOverlay(
     BuildContext context, {
     required String heroScope,
+    bool matchHomeNavigationPosition = false,
   }) {
     return Positioned(
       left: 16,
       right: 16,
-      bottom: MediaQuery.paddingOf(context).bottom,
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOutCubicEmphasized,
-        offset: MediaQuery.of(context).viewInsets.bottom > 0
-            ? const Offset(0, 1.5)
-            : Offset.zero,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: MediaQuery.of(context).viewInsets.bottom > 0 ? 0.0 : 1.0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              if (hasMassObtainOperations)
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    FloatingActionButton.small(
-                      heroTag: '${heroScope}_update_all_fab',
-                      elevation: 6,
-                      highlightElevation: 8,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.primaryContainer,
-                      foregroundColor: Theme.of(
-                        context,
-                      ).colorScheme.onPrimaryContainer,
-                      onPressed: () {
-                        hapticSelection();
-                        runMassObtain();
-                      },
-                      tooltip: null,
-                      child: const Icon(Icons.file_download_outlined, size: 20),
-                    ),
-                    if (pageUpdateCount > 0)
-                      Positioned(
-                        left: -4,
-                        bottom: -4,
-                        child: Badge(
-                          label: Text(pageUpdateCount.toString()),
-                          backgroundColor: Theme.of(context).colorScheme.error,
-                          textColor: Theme.of(context).colorScheme.onError,
+      bottom:
+          MediaQuery.paddingOf(context).bottom +
+          (matchHomeNavigationPosition ? 10.0 : 0.0),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: ConstrainedBox(
+          // On compact folder routes there is no navigation pill between the
+          // FABs, but they should retain the same centered positions as the
+          // main Apps tab instead of stretching to the screen edges.
+          constraints: BoxConstraints(
+            maxWidth: matchHomeNavigationPosition ? 336 : double.infinity,
+          ),
+          child: _HideWhileKeyboardOpen(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (hasMassObtainOperations)
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      FloatingActionButton.small(
+                        heroTag: '${heroScope}_update_all_fab',
+                        elevation: 6,
+                        highlightElevation: 8,
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.primaryContainer,
+                        foregroundColor: Theme.of(
+                          context,
+                        ).colorScheme.onPrimaryContainer,
+                        onPressed: () {
+                          hapticSelection();
+                          runMassObtain();
+                        },
+                        tooltip: null,
+                        child: const Icon(
+                          Icons.file_download_outlined,
+                          size: 20,
                         ),
                       ),
-                  ],
-                )
-              else
-                const SizedBox.shrink(),
-              if (isSelectionActive)
-                FloatingActionButton.small(
-                  heroTag: '${heroScope}_actions_fab',
-                  elevation: 6,
-                  highlightElevation: 8,
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  onPressed: () {
-                    hapticSelection();
-                    openSelectionActionsSheet();
-                  },
-                  tooltip: null,
-                  child: const Icon(Icons.checklist, size: 20),
-                )
-              else
-                FloatingActionButton.small(
-                  heroTag: '${heroScope}_view_options_fab',
-                  elevation: 6,
-                  highlightElevation: 8,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
-                  foregroundColor: Theme.of(
-                    context,
-                  ).colorScheme.onSurfaceVariant,
-                  onPressed: () {
-                    hapticSelection();
-                    openViewOptionsSheet();
-                  },
-                  tooltip: null,
-                  child: const Icon(Icons.tune, size: 20),
-                ),
-            ],
+                      if (pageUpdateCount > 0)
+                        Positioned(
+                          left: -4,
+                          bottom: -4,
+                          child: Badge(
+                            label: Text(pageUpdateCount.toString()),
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.error,
+                            textColor: Theme.of(context).colorScheme.onError,
+                          ),
+                        ),
+                    ],
+                  )
+                else
+                  const SizedBox.shrink(),
+                if (isSelectionActive)
+                  FloatingActionButton.small(
+                    heroTag: '${heroScope}_actions_fab',
+                    elevation: 6,
+                    highlightElevation: 8,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    onPressed: () {
+                      hapticSelection();
+                      openSelectionActionsSheet();
+                    },
+                    tooltip: null,
+                    child: const Icon(Icons.checklist, size: 20),
+                  )
+                else
+                  FloatingActionButton.small(
+                    heroTag: '${heroScope}_view_options_fab',
+                    elevation: 6,
+                    highlightElevation: 8,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    foregroundColor: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant,
+                    onPressed: () {
+                      hapticSelection();
+                      openViewOptionsSheet();
+                    },
+                    tooltip: null,
+                    child: const Icon(Icons.tune, size: 20),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3254,6 +3371,8 @@ class AppsPageState extends State<AppsPage> {
         s.showAppTypeBadge,
         s.showTrackedStoreBadge,
         s.showCategoriesBadge,
+        s.showAuthorBadge,
+        s.showVersionBadge,
         s.highlightTouchTargets,
         s.progressiveBlurEnabled,
         s.reduceVisualEffects,
@@ -4437,6 +4556,8 @@ class AppsPageState extends State<AppsPage> {
           showAppTypeBadge: settingsProvider.showAppTypeBadge,
           showTrackedStoreBadge: settingsProvider.showTrackedStoreBadge,
           showCategoriesBadge: settingsProvider.showCategoriesBadge,
+          showAuthorBadge: settingsProvider.showAuthorBadge,
+          showVersionBadge: settingsProvider.showVersionBadge,
           onTap: selectedAppIds.isNotEmpty
               ? () => toggleAppSelected(app.app)
               : navigateToAppPage,
@@ -4868,14 +4989,27 @@ class AppsPageState extends State<AppsPage> {
                 onPressed: () {
                   hapticSelection();
                   appsProvider.saveApps(
-                    appsToMark.map((a) {
-                      if (a.installedVersion != null &&
+                    appsToMark.map((appToUpdate) {
+                      final bool hasLegacyReset = appToUpdate.additionalSettings
+                          .containsKey(installStatusResetKey);
+                      App appToMark = appToUpdate;
+                      if ((appToUpdate.installedVersion != null ||
+                              hasLegacyReset) &&
                           !appsProvider.isVersionDetectionPossible(
-                            appsProvider.apps[a.id],
+                            appsProvider.apps[appToUpdate.id],
                           )) {
-                        return a.copyWith(installedVersion: a.latestVersion);
+                        appToMark = appToUpdate.copyWith(
+                          installedVersion: appToUpdate.latestVersion,
+                        );
                       }
-                      return a;
+                      if (hasLegacyReset) {
+                        appToMark = appToMark.copyWith(
+                          additionalSettings: Map<String, dynamic>.from(
+                            appToMark.additionalSettings,
+                          )..remove(installStatusResetKey),
+                        );
+                      }
+                      return appToMark;
                     }).toList(),
                     attemptToCorrectInstallStatus: false,
                     updateInstalledInfo: false,
@@ -6011,6 +6145,7 @@ class AppsPageState extends State<AppsPage> {
                           _buildAppsPageSideFabOverlay(
                             context,
                             heroScope: widget.folderId ?? 'ondemand',
+                            matchHomeNavigationPosition: true,
                           ),
                         if (showSplitPaneListFabs)
                           _buildAppsPageSideFabOverlay(

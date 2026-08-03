@@ -7,7 +7,6 @@ import 'dart:ui' show PlatformDispatcher;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/locale_resolution.dart';
 import 'package:obtainium/main.dart';
@@ -15,6 +14,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/folders/app_folder.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -817,6 +817,24 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get showAuthorBadge {
+    return prefs?.getBool('showAuthorBadge') ?? true;
+  }
+
+  set showAuthorBadge(bool value) {
+    prefs?.setBool('showAuthorBadge', value);
+    notifyListeners();
+  }
+
+  bool get showVersionBadge {
+    return prefs?.getBool('showVersionBadge') ?? true;
+  }
+
+  set showVersionBadge(bool value) {
+    prefs?.setBool('showVersionBadge', value);
+    notifyListeners();
+  }
+
   int get updateInterval {
     return prefs?.getInt('updateInterval') ?? 360;
   }
@@ -884,14 +902,17 @@ class SettingsProvider with ChangeNotifier {
     return false;
   }
 
-  Future<bool> getInstallPermission({bool enforce = false}) async {
+  Future<bool> getInstallPermission({
+    bool enforce = false,
+    ThemeData? toastTheme,
+  }) async {
     while (!(await Permission.requestInstallPackages.isGranted)) {
       // Explicit request as InstallPlugin request sometimes bugged
-      unawaited(
-        Fluttertoast.showToast(
-          msg: tr('pleaseAllowInstallPerm'),
-          toastLength: Toast.LENGTH_LONG,
-        ),
+      showAppToast(
+        tr('pleaseAllowInstallPerm'),
+        type: ToastType.warning,
+        duration: const Duration(seconds: 4),
+        theme: toastTheme,
       );
       if ((await Permission.requestInstallPackages.request()) ==
           PermissionStatus.granted) {
@@ -910,6 +931,15 @@ class SettingsProvider with ChangeNotifier {
 
   set showAppWebpage(bool show) {
     prefs?.setBool('showAppWebpage', show);
+    notifyListeners();
+  }
+
+  bool get updateButtonsAtTopOfAppPage {
+    return prefs?.getBool('updateButtonsAtTopOfAppPage') ?? false;
+  }
+
+  set updateButtonsAtTopOfAppPage(bool value) {
+    prefs?.setBool('updateButtonsAtTopOfAppPage', value);
     notifyListeners();
   }
 
@@ -1381,6 +1411,8 @@ class SettingsProvider with ChangeNotifier {
       // Retry once so transient SAF failures do not hide a still-valid grant.
       await Future<void>.delayed(const Duration(milliseconds: 200));
       if (!await _canReadAndWriteSafTree(uri)) {
+        await prefs?.remove('exportDir');
+        notifyListeners();
         if (warnIfInaccessible) {
           _showStorageAccessWarning(isExportDir: true);
         }
@@ -1450,6 +1482,8 @@ class SettingsProvider with ChangeNotifier {
     if (!await _canReadAndWriteSafTree(uri)) {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       if (!await _canReadAndWriteSafTree(uri)) {
+        await prefs?.remove('apkSaveDir');
+        notifyListeners();
         if (warnIfInaccessible) {
           _showStorageAccessWarning(isExportDir: false);
         }
@@ -1506,11 +1540,19 @@ class SettingsProvider with ChangeNotifier {
   Future<bool> _canReadAndWriteSafTree(Uri treeUri) async {
     try {
       if (await NativeFeatures.hasPersistedDocumentTreePermission(treeUri)) {
-        final bool canReadTree = await saf.canRead(treeUri) ?? false;
+        bool canReadTree = await saf.canRead(treeUri) ?? false;
         if (!canReadTree) {
-          return false;
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          canReadTree = await saf.canRead(treeUri) ?? false;
+          if (!canReadTree) {
+            return false;
+          }
         }
-        final bool canWriteTree = await saf.canWrite(treeUri) ?? false;
+        bool canWriteTree = await saf.canWrite(treeUri) ?? false;
+        if (!canWriteTree) {
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          canWriteTree = await saf.canWrite(treeUri) ?? false;
+        }
         return canWriteTree;
       }
 
@@ -1544,7 +1586,15 @@ class SettingsProvider with ChangeNotifier {
       _lastApkSaveDirAccessWarningAt = now;
     }
 
-    Fluttertoast.showToast(msg: tr('storagePermissionDenied'));
+    showAppToast(
+      tr(
+        isExportDir
+            ? 'exportFolderAccessUnavailable'
+            : 'apkSaveFolderAccessUnavailable',
+      ),
+      type: ToastType.error,
+      duration: const Duration(seconds: 5),
+    );
   }
 
   /// When true (and an APK save folder is set), copies of downloaded APKs are

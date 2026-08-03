@@ -126,13 +126,13 @@ extension AppsProviderImportExport on AppsProvider {
     SettingsProvider? sp,
   }) async {
     final SettingsProvider settingsProvider = sp ?? this.settingsProvider;
+    if (isAuto && !settingsProvider.autoExportOnChanges) {
+      return null;
+    }
     var exportDir = await settingsProvider.getExportDir(
       warnIfInaccessible: true,
     );
     if (isAuto) {
-      if (!settingsProvider.autoExportOnChanges) {
-        return null;
-      }
       if (exportDir == null) {
         return null;
       }
@@ -252,7 +252,7 @@ extension AppsProviderImportExport on AppsProvider {
       final a = importedApps[i];
       final installedInfo = await getInstalledInfo(a.id);
       importedApps[i] = a.copyWith(
-        installedVersion: a.settings.getBool('useVersionCodeAsOSVersion')
+        installedVersion: a.usesVersionCodeAsOsVersion
             ? installedInfo?.versionCode.toString()
             : installedInfo?.versionName,
       );
@@ -453,6 +453,8 @@ const Set<String> obtainXOnlySettingKeys = {
   'showAppTypeBadge',
   'showTrackedStoreBadge',
   'showCategoriesBadge',
+  'showAuthorBadge',
+  'showVersionBadge',
   'saveDownloadedApkCopies',
   'apkSaveDir',
   'rightSwipeAction',

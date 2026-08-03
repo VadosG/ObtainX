@@ -8,7 +8,6 @@ import 'package:http/http.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/custom_errors.dart';
-import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
@@ -112,9 +111,16 @@ class GitHub extends AppSource {
         'includePrereleases',
         label: tr('includePrereleases'),
         value: false,
+        turnsOffKeys: const ['verifyLatestTag'],
       ),
     ],
-    [GeneratedFormSwitch('verifyLatestTag', label: tr('verifyLatestTag'))],
+    [
+      GeneratedFormSwitch(
+        'verifyLatestTag',
+        label: tr('verifyLatestTag'),
+        turnsOffKeys: const ['includePrereleases'],
+      ),
+    ],
     AppSource.fallbackToOlderReleasesFormItem,
     [
       GeneratedFormTextField(
@@ -302,7 +308,7 @@ class GitHub extends AppSource {
     final token = await getTokenIfAny(additionalSettings);
     final headers = <String, String>{};
     if (token != null && token.isNotEmpty) {
-      headers[HttpHeaders.authorizationHeader] = 'Token $token';
+      headers[HttpHeaders.authorizationHeader] = 'Bearer $token';
     }
     if (forAPKDownload == true) {
       headers[HttpHeaders.acceptHeader] = 'application/octet-stream';
@@ -312,6 +318,43 @@ class GitHub extends AppSource {
     } else {
       return null;
     }
+  }
+
+  @override
+  Future<Response> sourceRequest(
+    String url,
+    Map<String, dynamic> additionalSettings, {
+    bool followRedirects = true,
+    Object? postBody,
+  }) async {
+    final Response res = await super.sourceRequest(
+      url,
+      additionalSettings,
+      followRedirects: followRedirects,
+      postBody: postBody,
+    );
+    final String? token = await getTokenIfAny(additionalSettings);
+    if (res.statusCode == 401 && token != null && token.isNotEmpty) {
+      final Map<String, dynamic> unauthSettings = Map<String, dynamic>.from(
+        additionalSettings,
+      );
+      unauthSettings[githubCredsKey] = '';
+      final Response retryRes = await super.sourceRequest(
+        url,
+        unauthSettings,
+        followRedirects: followRedirects,
+        postBody: postBody,
+      );
+      if (retryRes.statusCode < 400) {
+        unawaited(
+          LogsProvider().add(
+            'GitHub API returned 401 with stored PAT. Retried unauthenticated successfully. Please check or update your GitHub Personal Access Token in Settings.',
+          ),
+        );
+        return retryRes;
+      }
+    }
+    return res;
   }
 
   Future<String?> getTokenIfAny(Map<String, dynamic> additionalSettings) async {
@@ -1001,7 +1044,8 @@ class GitHub extends AppSource {
             true
         ? additionalSettings['filterReleaseNotesByRegEx']
         : null;
-    final bool verifyLatestTag = additionalSettings['verifyLatestTag'] == true;
+    final bool verifyLatestTag =
+        additionalSettings['verifyLatestTag'] == true && !includePrereleases;
     final bool useLatestAssetDateAsReleaseDate =
         additionalSettings['useLatestAssetDateAsReleaseDate'] == true;
     final String sortMethod =
@@ -1170,6 +1214,21 @@ class GitHub extends AppSource {
             : githubAttestationStatusError;
       }
 
+      final List<String> rawReleaseTitleCandidates = <String>[];
+      for (final rel in releases) {
+        if (rel is Map<String, dynamic>) {
+          final String? title =
+              (rel['name'] as String?)?.trim().isNotEmpty == true
+              ? (rel['name'] as String).trim()
+              : (rel['tag_name'] as String?)?.trim();
+          if (title != null &&
+              title.isNotEmpty &&
+              !rawReleaseTitleCandidates.contains(title)) {
+            rawReleaseTitleCandidates.add(title);
+          }
+        }
+      }
+
       return APKDetails(
         version,
         apkUrls,
@@ -1178,6 +1237,7 @@ class GitHub extends AppSource {
         changeLog: changeLog.isEmpty ? null : changeLog,
         allAssetUrls:
             targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
+        rawReleaseTitleCandidates: rawReleaseTitleCandidates,
         apkSizeBytes: apkSizeBytes,
         attestationStatus: attestationStatus,
       );

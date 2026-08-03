@@ -33,12 +33,6 @@ final RegExp _androidApplicationIdPattern = RegExp(
   r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$',
 );
 
-class VersionComparison {
-  final bool areEqual;
-  final String version;
-  const VersionComparison({required this.areEqual, required this.version});
-}
-
 /// Outcome of [AppsProviderLifecycle.removeAppsWithModal].
 class RemoveAppsWithModalResult {
   const RemoveAppsWithModalResult._({
@@ -80,7 +74,11 @@ extension AppsProviderLifecycle on AppsProvider {
 
   String? _getRealInstalledVersion(App app, PackageInfo? installedInfo) {
     if (installedInfo == null) return null;
-    return app.settings.getBool('useVersionCodeAsOSVersion')
+    // Must use the same rule as the app page's displayed version: reading only
+    // the derived `useVersionCodeAsOSVersion` boolean made this compare
+    // versionName against a stored version code whenever the boolean and the
+    // versionDetection dropdown fell out of sync.
+    return app.usesVersionCodeAsOsVersion
         ? installedInfo.versionCode?.toString()
         : installedInfo.versionName;
   }
@@ -138,6 +136,12 @@ extension AppsProviderLifecycle on AppsProvider {
     final bool releaseCommitShaAsVersion = app.app.settings.getBool(
       'releaseCommitShaAsVersion',
     );
+    final bool hasComparableNumericReleaseVersions =
+        realInstalledVersion != null &&
+        recognizedNumericReleaseVersionsAreComparable(
+          realInstalledVersion,
+          app.app.latestVersion,
+        );
     return !app.app.settings.getBool('trackOnly') &&
         !app.app.settings.getBool('releaseDateAsVersion') &&
         !isHTMLWithNoVersionDetection &&
@@ -148,6 +152,7 @@ extension AppsProviderLifecycle on AppsProvider {
                   app.app.latestVersion,
                 ) !=
                 null ||
+            hasComparableNumericReleaseVersions ||
             naiveStandardVersionDetection ||
             hasCommitSha ||
             releaseCommitShaAsVersion);
@@ -192,16 +197,8 @@ extension AppsProviderLifecycle on AppsProvider {
       );
       modded = true;
     }
-    // versionDetection is a string enum ('auto'/'standard'/'pseudo'/'versionCode'),
-    // NOT a bool — getBool() would return false for every string value and
-    // suppress install-version reconciliation for all standard apps.
-    final versionDetection = app.additionalSettings['versionDetection'];
-    final versionDetectionIsStandard =
-        versionDetection == 'auto' ||
-        versionDetection == 'standard' ||
-        versionDetection == 'versionCode' ||
-        versionDetection == true ||
-        versionDetection == null;
+    final VersionDetectionMode versionDetection = app.versionDetectionMode;
+    final bool versionDetectionIsStandard = app.usesStandardVersionDetection;
     final naiveStandardVersionDetection = _getNaiveStandardVersionDetection(
       app,
     );
@@ -209,32 +206,17 @@ extension AppsProviderLifecycle on AppsProvider {
       app,
       installedInfo,
     );
-    // 0. Honour an explicit "reset install status" until the app is genuinely
-    // (re)installed on the device. The stamp records the device's install time
-    // at reset; once that changes the reset has been superseded by a real
-    // install, so drop it and let normal detection resume.
-    final Object? installStatusResetStamp =
-        app.additionalSettings[installStatusResetKey];
-    // Deliberately no "always live" sentinel: anything that can't be matched
-    // against a real install time must expire, or a stale stamp would pin an
-    // installed app to "not installed" forever.
-    final bool installStatusResetIsLive =
-        installStatusResetStamp != null &&
-        installStatusResetStamp == installedInfo?.lastUpdateTime;
-    if (installStatusResetStamp != null && !installStatusResetIsLive) {
-      app = app.copyWith(
-        additionalSettings: Map<String, dynamic>.from(app.additionalSettings)
-          ..remove(installStatusResetKey),
-      );
+    // Migrate the 2.9.7 reset sentinel. It deliberately kept installedVersion
+    // null until a reinstall, which could strand an installed app indefinitely.
+    if (app.additionalSettings.containsKey(installStatusResetKey)) {
+      app = resetInstallStatusToDeviceVersion(app, installedInfo);
       modded = true;
     }
     // 1. Compare reported vs. real installed versions where one is null.
     if (installedInfo == null && app.installedVersion != null && !trackOnly) {
       app = app.copyWith(installedVersion: null);
       modded = true;
-    } else if (realInstalledVersion != null &&
-        app.installedVersion == null &&
-        !installStatusResetIsLive) {
+    } else if (realInstalledVersion != null && app.installedVersion == null) {
       // With detection disabled (non-standard), the device manifest version
       // isn't the source/release version, so mark installed = latest rather
       // than the manifest version (parity with fork main).
@@ -272,8 +254,8 @@ extension AppsProviderLifecycle on AppsProvider {
       }
     }
     // 1c. Auto-heal a stored installedVersion whose format no longer matches
-    // the active useVersionCodeAsOSVersion setting (versionCode int vs
-    // versionName) — parity with fork main.
+    // the active version-code setting (versionCode int vs versionName) — parity
+    // with fork main.
     if (realInstalledVersion != null &&
         app.installedVersion != null &&
         versionDetectionIsStandard) {
@@ -282,7 +264,7 @@ extension AppsProviderLifecycle on AppsProvider {
         r'^\d+$',
       ).hasMatch(app.installedVersion!);
       final isRealPureInteger = RegExp(r'^\d+$').hasMatch(realInstalledVersion);
-      if (app.additionalSettings['useVersionCodeAsOSVersion'] == true) {
+      if (app.usesVersionCodeAsOsVersion) {
         if (!isStoredPureInteger) {
           formatMismatch = true;
         }
@@ -299,9 +281,6 @@ extension AppsProviderLifecycle on AppsProvider {
       }
     }
     // 2. Reconcile differences between reported and real installed versions.
-    // The `installedVersion != null` guard is a fork addition: a live install
-    // status reset (see [installStatusResetKey]) legitimately leaves it null
-    // while the app is still on the device, which would blow up the `!` below.
     if (realInstalledVersion != null &&
         app.installedVersion != null &&
         realInstalledVersion != app.installedVersion &&
@@ -355,10 +334,8 @@ extension AppsProviderLifecycle on AppsProvider {
         realInstalledVersion != null &&
         versionsEffectivelyEqual(realInstalledVersion, app.latestVersion);
     final bool canAutoDisable =
-        app.additionalSettings['useVersionCodeAsOSVersion'] != true &&
-        (versionDetection == 'auto' ||
-            versionDetection == true ||
-            versionDetection == null);
+        !app.usesVersionCodeAsOsVersion &&
+        versionDetection == VersionDetectionMode.auto;
     if (canAutoDisable &&
         !trackOnly &&
         installedInfo != null &&
@@ -369,7 +346,7 @@ extension AppsProviderLifecycle on AppsProvider {
         )) {
       app = app.copyWith(
         additionalSettings: Map<String, dynamic>.from(app.additionalSettings)
-          ..['versionDetection'] = 'pseudo',
+          ..['versionDetection'] = VersionDetectionMode.pseudo.key,
         installedVersion: app.latestVersion,
       );
       unawaited(logs.add('Could not reconcile version formats for: ${app.id}'));
@@ -385,41 +362,11 @@ extension AppsProviderLifecycle on AppsProvider {
     return modded ? app : null;
   }
 
-  VersionComparison? reconcileVersionDifferences(
-    String templateVersion,
-    String comparisonVersion,
-  ) {
-    final templateVersionFormats = VersionService()
-        .findStandardFormatsForVersion(templateVersion, true);
-    var comparisonVersionFormats = VersionService()
-        .findStandardFormatsForVersion(comparisonVersion, true);
-    if (comparisonVersionFormats.isEmpty) {
-      comparisonVersionFormats = VersionService().findStandardFormatsForVersion(
-        comparisonVersion,
-        false,
-      );
-    }
-    final commonStandardFormats = templateVersionFormats.intersection(
-      comparisonVersionFormats,
-    );
-    if (commonStandardFormats.isEmpty) {
-      return null;
-    }
-    for (String pattern in commonStandardFormats) {
-      if (VersionService().doStringsMatchUnderRegEx(
-        pattern,
-        comparisonVersion,
-        templateVersion,
-      )) {
-        return VersionComparison(areEqual: true, version: comparisonVersion);
-      }
-    }
-    return VersionComparison(areEqual: false, version: templateVersion);
-  }
-
-  /// Delegates to [VersionService.doStringsMatchUnderRegEx].
-  bool doStringsMatchUnderRegEx(String pattern, String value1, String value2) =>
-      VersionService().doStringsMatchUnderRegEx(pattern, value1, value2);
+  // Version reconciliation deliberately lives ONLY as the top-level
+  // [reconcileVersionDifferences] in apps_provider.dart. A same-named member here
+  // shadows it for every call inside this extension, which is how the two copies
+  // drifted (this one was missing the shape fallback) and how genuine updates
+  // ended up being discarded. Call the top-level function; don't re-add a member.
 
   /// When version detection is disabled, decide whether an externally-observed
   /// device version should replace the stored pseudo/installed version.
@@ -1186,6 +1133,77 @@ extension AppsProviderLifecycle on AppsProvider {
     }
   }
 
+  /// Persists [updatedApp] under its new package ID and removes the entry
+  /// stored under [previousPackageId].
+  Future<void> renameAppPackageId(
+    String previousPackageId,
+    App updatedApp,
+  ) async {
+    final String newPackageId = updatedApp.id.trim();
+    final AppInMemory? previousEntry = apps[previousPackageId];
+    if (newPackageId.isEmpty) {
+      throw ObtainiumError(tr('invalidAndroidPackageId'));
+    }
+    if (previousEntry == null) {
+      throw ObtainiumError(tr('unexpectedError'));
+    }
+    if (newPackageId == previousPackageId) {
+      await saveApps([updatedApp], updateInstalledInfo: false);
+      return;
+    }
+    if (apps.containsKey(newPackageId)) {
+      throw ObtainiumError(tr('appAlreadyAdded'));
+    }
+    if (previousEntry.downloadProgress != null) {
+      throw ObtainiumError(tr('unexpectedError'));
+    }
+
+    final File previousUserIcon = _userAppIconPngFile(previousPackageId);
+    final File newUserIcon = _userAppIconPngFile(newPackageId);
+    if (newUserIcon.existsSync()) {
+      deleteFile(newUserIcon);
+    }
+    if (previousUserIcon.existsSync()) {
+      previousUserIcon.renameSync(newUserIcon.path);
+    }
+
+    try {
+      await saveApps(
+        [updatedApp.copyWith(id: newPackageId)],
+        onlyIfExists: false,
+        autoExportAfterSave: false,
+      );
+    } catch (_) {
+      if (newUserIcon.existsSync() && !previousUserIcon.existsSync()) {
+        newUserIcon.renameSync(previousUserIcon.path);
+      }
+      rethrow;
+    }
+
+    final AppInMemory? newEntry = apps[newPackageId];
+    if (newEntry != null) {
+      apps[newPackageId] = AppInMemory(
+        newEntry.app,
+        previousEntry.downloadProgress,
+        newEntry.installedInfo,
+        previousEntry.icon,
+        sourceType: previousEntry.sourceType,
+        download: previousEntry.download,
+      );
+    }
+
+    final ({String? title, String message})? pageError = appPageErrors.remove(
+      previousPackageId,
+    );
+    if (pageError != null) {
+      appPageErrors[newPackageId] = pageError;
+    }
+    detailPageAutoChecksInFlight.remove(previousPackageId);
+    lastDetailPageAutoCheckStartedAt.remove(previousPackageId);
+
+    await removeApps([previousPackageId]);
+  }
+
   Future<RemoveAppsWithModalResult> removeAppsWithModal(
     BuildContext context,
     List<App> appsToAffect,
@@ -1505,8 +1523,7 @@ extension AppsProviderLifecycle on AppsProvider {
         'trackOnlyTemporaryPackageId': isTempId(renamed),
       },
     );
-    await removeApps([previousPackageId]);
-    await saveApps([updatedApp], onlyIfExists: false);
+    await renameAppPackageId(previousPackageId, updatedApp);
   }
 
   /// Reconciles a newly added app with all smart folders. Prefer the live [App]

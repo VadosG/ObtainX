@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/installers/installer.dart';
 import 'package:obtainium/providers/source_provider.dart';
@@ -23,7 +24,7 @@ class ShizukuInstaller extends Installer {
       false;
 
   @override
-  Future<void> ensurePermission() async {
+  Future<void> ensurePermission({ThemeData? toastTheme}) async {
     switch ((await ShizukuApkInstaller().checkPermission())) {
       case 'services_not_found':
         throw ObtainiumError(tr('shizukuBinderNotFound'));
