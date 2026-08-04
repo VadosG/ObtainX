@@ -223,7 +223,7 @@
     "language": "Language",
     "copiedToClipboard": "Copied to clipboard",
     "certificateHashCopiedToClipboard": "Certificate hash copied to clipboard",
-    "storagePermissionDenied": "Storage permission denied",
+    "storagePermissionDenied": "Backup folder access lost",
     "filterAPKsByRegEx": "Filter APKs by regular expression",
     "uninstallFromDevice": "Uninstall from device",
     "onlyWorksWithNonVersionDetectApps": "Only works for apps with version detection disabled.",
