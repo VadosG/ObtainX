@@ -324,15 +324,38 @@ extension AppsProviderLifecycle on AppsProvider {
         modded = true;
       }
     }
+    final bool realInstalledVersionMatchesLatest =
+        realInstalledVersion != null &&
+        versionsEffectivelyEqual(realInstalledVersion, app.latestVersion);
+    // 3b. The device says the source's latest release IS what's installed, but
+    // the stored version still disagrees and none of the steps above could
+    // relate the two strings, so nothing adopted the device's verdict (#222).
+    // Steps 1b/2/3 all require the pair to share a standard format, a digit
+    // shape, or a dotted-numeric parse, and all three fail when the APK
+    // manifest's versionName carries text the source version lacks
+    // ('2.19.1 (git 50a6b17)' vs tag 'v2.19.1') or when a 'v' prefix combines
+    // with a changed segment count ('v7.1' stored vs device '7.1.1'). Without
+    // this step a single unrecorded install is permanent: the app reports the
+    // old version and offers the same update forever, surviving restarts and
+    // pull-to-refresh. Equality here is the same test step 4 already trusts to
+    // decide that detection is working, so adopting latest cannot invent a
+    // version the device isn't running.
+    // Version-code mode is excluded: there the device value is a version code,
+    // which is not comparable with a source version string.
+    if (realInstalledVersionMatchesLatest &&
+        versionDetectionIsStandard &&
+        !app.usesVersionCodeAsOsVersion &&
+        app.installedVersion != null &&
+        app.installedVersion != app.latestVersion) {
+      app = app.copyWith(installedVersion: app.latestVersion);
+      modded = true;
+    }
     // 4. Disable version detection if versions are not standardizable.
     // Guards (parity with fork main): only auto-disable plain auto-detection
     // (not versionCode mode or an already-non-standard mode), never for
     // track-only, and NOT when the real device version is effectively equal to
     // latest (e.g. same commit hash / sha-like) — those are reconcilable, not
     // failures. The disabled value is the string enum 'pseudo', never bool false.
-    final bool realInstalledVersionMatchesLatest =
-        realInstalledVersion != null &&
-        versionsEffectivelyEqual(realInstalledVersion, app.latestVersion);
     final bool canAutoDisable =
         !app.usesVersionCodeAsOsVersion &&
         versionDetection == VersionDetectionMode.auto;
@@ -440,6 +463,7 @@ extension AppsProviderLifecycle on AppsProvider {
             0) <
         folderCriteriaMigrationVersion;
     final folderMembershipsToPersist = <App>[];
+    final correctedInstallStatusIds = <String>[];
     try {
       // Commit any deferred "remove from ObtainX" whose in-memory deferral was
       // lost (e.g. process restart) before re-reading the app JSON dir.
@@ -538,6 +562,7 @@ extension AppsProviderLifecycle on AppsProvider {
                 if (correctedApp != null) {
                   app = correctedApp;
                   dataChanged = true;
+                  correctedInstallStatusIds.add(correctedApp.id);
                   // Absence from the device is the signal for "externally
                   // uninstalled" — not a null installedVersion, which is also
                   // the state left behind by an explicit install status reset.
@@ -661,6 +686,47 @@ extension AppsProviderLifecycle on AppsProvider {
         notify();
       }
     }
+    // Deliberately after the load has been reported as finished, and not awaited:
+    // nothing on screen waits for these writes.
+    if (correctedInstallStatusIds.isNotEmpty) {
+      unawaited(persistInstallStatusCorrections(correctedInstallStatusIds));
+    }
+  }
+
+  /// Writes install-status corrections that [loadApps] applied in memory back to
+  /// their JSON files.
+  ///
+  /// Without this, the corrected version lives only in memory and is re-derived
+  /// on every load, so the file on disk — and therefore any backup or auto-export
+  /// taken before the app is saved for some other reason — keeps reporting the
+  /// stale version (#222).
+  ///
+  /// Cheap in the steady state: corrections are idempotent, so once a file has
+  /// been written this finds nothing to write on subsequent loads. Only a load
+  /// that actually corrected something persists anything.
+  ///
+  /// Reads each app from the live map rather than from a snapshot taken during the
+  /// load, so a change made while the load was running (e.g. an install
+  /// recording its version) wins instead of being overwritten.
+  Future<void> persistInstallStatusCorrections(List<String> appIds) async {
+    final List<App> appsToSave = <App>[];
+    for (final String appId in appIds) {
+      final AppInMemory? entry = apps[appId];
+      if (entry != null) {
+        appsToSave.add(entry.app);
+      }
+    }
+    if (appsToSave.isEmpty) return;
+    await saveApps(
+      appsToSave,
+      // These apps were just corrected against install info the load already
+      // read: don't re-query the package manager, don't redo the correction, and
+      // don't let a routine post-load write trigger an auto-export (same reasoning
+      // as the folder-membership save above).
+      attemptToCorrectInstallStatus: false,
+      updateInstalledInfo: false,
+      autoExportAfterSave: false,
+    );
   }
 
   bool _bytesLookLikeRasterImage(Uint8List bytes) {

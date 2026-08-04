@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -1203,6 +1204,180 @@ This app description should not be included.
           .toList(),
       <String>[],
     );
+  });
+
+  // #222: an install whose success was never recorded left the stored version
+  // permanently behind whenever the device's versionName could not be related to
+  // the source's version string. Both reported apps used a third-party installer
+  // and were stuck across restarts and pull-to-refresh.
+  group('#222 stale installed version is healed from the device', () {
+    App issue222App({
+      required String? installedVersion,
+      required String latestVersion,
+      String url = 'https://github.com/kichikuou/xsystem35-sdl2',
+      Map<String, dynamic>? additionalSettings,
+    }) => App(
+      id: 'io.github.kichikuou.xsystem35',
+      url: url,
+      author: 'kichikuou',
+      name: 'xsystem35',
+      installedVersion: installedVersion,
+      latestVersion: latestVersion,
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings:
+          additionalSettings ?? <String, dynamic>{'versionDetection': 'auto'},
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    App? correct(
+      App app, {
+      required String deviceVersionName,
+      int deviceVersionCode = 36,
+    }) => AppsProvider(isBg: true).getCorrectedInstallStatusAppIfPossible(
+      app,
+      FakePackageInfo(
+        packageName: app.id,
+        versionName: deviceVersionName,
+        versionCode: deviceVersionCode,
+      ),
+    );
+
+    test('manifest versionName carrying a git hash (xsystem35)', () {
+      final app = issue222App(
+        installedVersion: 'v2.19.0',
+        latestVersion: 'v2.19.1',
+      );
+
+      final correctedApp = correct(
+        app,
+        deviceVersionName: '2.19.1 (git 50a6b17)',
+      );
+
+      expect(correctedApp, isNotNull);
+      expect(correctedApp!.installedVersion, 'v2.19.1');
+      expect(appHasActionableUpdate(correctedApp), false);
+      // The device version reconciles with latest, so detection stays on.
+      expect(correctedApp.additionalSettings['versionDetection'], 'auto');
+    });
+
+    test('v-prefixed tag whose segment count changed (ZipXtract)', () {
+      final app = issue222App(
+        url: 'https://github.com/WirelessAlien/ZipXtract',
+        installedVersion: 'v7.1',
+        latestVersion: 'v7.1.1',
+      );
+
+      final correctedApp = correct(
+        app,
+        deviceVersionName: '7.1.1',
+        deviceVersionCode: 26,
+      );
+
+      expect(correctedApp, isNotNull);
+      expect(correctedApp!.installedVersion, 'v7.1.1');
+      expect(appHasActionableUpdate(correctedApp), false);
+    });
+
+    test('both sides keeping the full manifest string', () {
+      final app = issue222App(
+        installedVersion: '2.19.0 (git a77e849)',
+        latestVersion: '2.19.1 (git 50a6b17)',
+      );
+
+      final correctedApp = correct(
+        app,
+        deviceVersionName: '2.19.1 (git 50a6b17)',
+      );
+
+      expect(correctedApp, isNotNull);
+      expect(correctedApp!.installedVersion, '2.19.1 (git 50a6b17)');
+      expect(versionOrderUncertainUpdate(correctedApp), false);
+    });
+
+    test('a device genuinely behind latest is left alone', () {
+      final app = issue222App(
+        installedVersion: 'v2.19.0',
+        latestVersion: 'v2.19.1',
+      );
+
+      final correctedApp = correct(
+        app,
+        deviceVersionName: '2.19.0 (git a77e849)',
+      );
+
+      expect(correctedApp?.installedVersion ?? app.installedVersion, 'v2.19.0');
+      expect(appHasActionableUpdate(correctedApp ?? app), true);
+    });
+
+    test('version-code mode is never healed from a version string', () {
+      final app = issue222App(
+        installedVersion: '36',
+        latestVersion: 'v2.19.1',
+        additionalSettings: <String, dynamic>{
+          'versionDetection': 'versionCode',
+        },
+      );
+
+      final correctedApp = correct(
+        app,
+        deviceVersionName: '2.19.1 (git 50a6b17)',
+      );
+
+      // The device's version code is unchanged, so the stored version code
+      // stands; it must not be replaced by the source's version string.
+      expect(correctedApp?.installedVersion ?? app.installedVersion, '36');
+    });
+
+    test('corrections are written back to the app JSON', () async {
+      final appsProvider = AppsProvider(isBg: true);
+      final app = issue222App(
+        installedVersion: 'v2.19.1',
+        latestVersion: 'v2.19.1',
+      );
+      appsProvider.apps[app.id] = AppInMemory(app, null, null, null);
+
+      await appsProvider.persistInstallStatusCorrections(<String>[app.id]);
+
+      final File appFile = File(
+        '${(await appsProvider.getAppsDir()).path}/${app.id}.json',
+      );
+      expect(appFile.existsSync(), true);
+      expect(
+        (jsonDecode(appFile.readAsStringSync()) as Map)['installedVersion'],
+        'v2.19.1',
+      );
+    });
+
+    test('nothing is written for apps that are no longer tracked', () async {
+      final appsProvider = AppsProvider(isBg: true);
+      final File appFile = File(
+        '${(await appsProvider.getAppsDir()).path}/app.gone.json',
+      );
+
+      await appsProvider.persistInstallStatusCorrections(<String>['app.gone']);
+
+      expect(appFile.existsSync(), false);
+    });
+
+    test('pseudo-version apps are not given the source latest', () {
+      final app = issue222App(
+        installedVersion: 'nightly-2026-07-20',
+        latestVersion: 'nightly-2026-07-28',
+        additionalSettings: <String, dynamic>{'versionDetection': 'pseudo'},
+      );
+
+      final correctedApp = correct(
+        app,
+        deviceVersionName: '2.19.1 (git 50a6b17)',
+      );
+
+      expect(
+        correctedApp?.installedVersion ?? app.installedVersion,
+        'nightly-2026-07-20',
+      );
+    });
   });
 
   test('commit-sha-like version update does not disable version detection', () {
