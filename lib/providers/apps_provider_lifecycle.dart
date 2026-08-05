@@ -23,11 +23,16 @@ import 'package:path_provider/path_provider.dart';
 
 /// App persistence (load/save/remove), icons, and version-detection helpers.
 const _corruptFileSuffix = '.corrupt';
+const Duration _staleSaveTempAge = Duration(hours: 1);
+final RegExp _saveTempFilePattern = RegExp(r'\.json\.tmp_\d+_\d+$');
 
 // Icons from getAppIcon() are often 192–432 px but only shown at ~40 dp, so
 // 128 px is plenty at any device pixel ratio. Resize before caching so both the
 // on-disk and in-memory representations stay small.
 const int _iconMaxCachePx = 128;
+
+int _saveAppsTmpNonce = 0;
+Future<void> _saveAppsQueue = Future<void>.value();
 
 final RegExp _androidApplicationIdPattern = RegExp(
   r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$',
@@ -483,6 +488,9 @@ extension AppsProviderLifecycle on AppsProvider {
       final List<FileSystemEntity> appFiles = await (await getAppsDir())
           .list()
           .toList();
+      final DateTime staleSaveTempCutoff = DateTime.now().subtract(
+        _staleSaveTempAge,
+      );
       const int loadChunkSize = 16;
       for (
         int chunkStart = 0;
@@ -492,7 +500,27 @@ extension AppsProviderLifecycle on AppsProvider {
         final int chunkEnd = min(chunkStart + loadChunkSize, appFiles.length);
         await Future.wait(
           appFiles.sublist(chunkStart, chunkEnd).map((item) async {
-            if (!item.path.toLowerCase().endsWith('.json')) return;
+            final String lowerPath = item.path.toLowerCase();
+            final bool isSaveTempFile =
+                lowerPath.endsWith('.json.tmp') ||
+                _saveTempFilePattern.hasMatch(lowerPath);
+            if (isSaveTempFile) {
+              try {
+                final FileStat tempFileStat = await item.stat();
+                if (tempFileStat.modified.isBefore(staleSaveTempCutoff)) {
+                  await item.delete();
+                }
+              } catch (error) {
+                unawaited(
+                  logs.add(
+                    'Failed to clean stale save temp ${item.path}: $error',
+                    level: LogLevel.warning,
+                  ),
+                );
+              }
+              return;
+            }
+            if (!lowerPath.endsWith('.json')) return;
             final String fileName = item.path.split('/').last;
             if (singleId != null &&
                 fileName.toLowerCase() != '${singleId.toLowerCase()}.json') {
@@ -1041,131 +1069,171 @@ extension AppsProviderLifecycle on AppsProvider {
     bool autoExportAfterSave = true,
     Map<String, PackageInfo>? prefetchedInstalledInfo,
   }) async {
-    Map<String, PackageInfo>? installedInfoSnapshot = prefetchedInstalledInfo;
-    if (installedInfoSnapshot == null &&
-        updateInstalledInfo &&
-        apps.length > 1) {
-      try {
-        final List<PackageInfo> installedPackages = await getAllInstalledInfo(
-          light: true,
-        );
-        installedInfoSnapshot = {
-          for (final PackageInfo info in installedPackages)
-            if (info.packageName != null) info.packageName!: info,
-        };
-      } catch (e) {
-        unawaited(
-          logs.add(
-            'Failed to prefetch installed package info for bulk save: $e',
-            level: LogLevel.warning,
-          ),
-        );
+    if (apps.isEmpty) return;
+    final List<App> uniqueApps = <App>[];
+    final Set<String> seenIds = <String>{};
+    for (int appIndex = apps.length - 1; appIndex >= 0; appIndex--) {
+      if (seenIds.add(apps[appIndex].id)) {
+        uniqueApps.add(apps[appIndex].deepCopy());
       }
     }
-    final Directory appsDirectory = await getAppsDir();
-    final sourceProvider = SourceProvider();
-    final appFolders = settingsProvider.appFolders;
-    final Map<String, PackageInfo>? effectiveInstalledInfoSnapshot =
-        installedInfoSnapshot;
-    const int saveChunkSize = 16;
-    for (
-      int chunkStart = 0;
-      chunkStart < apps.length;
-      chunkStart += saveChunkSize
-    ) {
-      final int chunkEnd = min(chunkStart + saveChunkSize, apps.length);
-      await Future.wait(
-        apps.sublist(chunkStart, chunkEnd).map((a) async {
-          var app = a.copyWith();
-          final AppInMemory? cached = this.apps[app.id];
-          final PackageInfo? info;
-          if (!updateInstalledInfo) {
-            info = cached?.installedInfo;
-          } else if (effectiveInstalledInfoSnapshot != null) {
-            info = effectiveInstalledInfoSnapshot[app.id];
-          } else {
-            info = await getInstalledInfo(app.id);
-          }
-          Uint8List? icon = cached?.icon;
-          String? installedAppName;
-          if (!updateInstalledInfo) {
-            installedAppName = cached?.installedInfo == null
-                ? null
-                : cached?.app.name;
-          } else {
-            final bool installedPackageUnchanged =
-                cached != null &&
-                cached.installedInfo?.packageName == info?.packageName &&
-                cached.installedInfo?.versionName == info?.versionName &&
-                cached.installedInfo?.versionCode == info?.versionCode &&
-                cached.installedInfo?.lastUpdateTime == info?.lastUpdateTime;
-            if (installedPackageUnchanged) {
-              installedAppName = info == null ? null : cached.app.name;
+    final List<App> effectiveApps = uniqueApps.reversed.toList();
+
+    final Future<void> pendingSaves = _saveAppsQueue;
+    final Completer<void> saveCompletion = Completer<void>();
+    _saveAppsQueue = saveCompletion.future;
+    try {
+      await pendingSaves;
+      Map<String, PackageInfo>? installedInfoSnapshot = prefetchedInstalledInfo;
+      if (installedInfoSnapshot == null &&
+          updateInstalledInfo &&
+          effectiveApps.length > 1) {
+        try {
+          final List<PackageInfo> installedPackages = await getAllInstalledInfo(
+            light: true,
+          );
+          installedInfoSnapshot = {
+            for (final PackageInfo info in installedPackages)
+              if (info.packageName != null) info.packageName!: info,
+          };
+        } catch (e) {
+          unawaited(
+            logs.add(
+              'Failed to prefetch installed package info for bulk save: $e',
+              level: LogLevel.warning,
+            ),
+          );
+        }
+      }
+      final Directory appsDirectory = await getAppsDir();
+      final sourceProvider = SourceProvider();
+      final appFolders = settingsProvider.appFolders;
+      final Map<String, PackageInfo>? effectiveInstalledInfoSnapshot =
+          installedInfoSnapshot;
+      const int saveChunkSize = 16;
+      for (
+        int chunkStart = 0;
+        chunkStart < effectiveApps.length;
+        chunkStart += saveChunkSize
+      ) {
+        final int chunkEnd = min(
+          chunkStart + saveChunkSize,
+          effectiveApps.length,
+        );
+        await Future.wait(
+          effectiveApps.sublist(chunkStart, chunkEnd).map((a) async {
+            var app = a.copyWith();
+            final AppInMemory? cached = this.apps[app.id];
+            final PackageInfo? info;
+            if (!updateInstalledInfo) {
+              info = cached?.installedInfo;
+            } else if (effectiveInstalledInfoSnapshot != null) {
+              info = effectiveInstalledInfoSnapshot[app.id];
             } else {
-              icon = null;
-              final applicationInfo = info?.applicationInfo;
-              if (applicationInfo != null) {
+              info = await getInstalledInfo(app.id);
+            }
+            Uint8List? icon = cached?.icon;
+            String? installedAppName;
+            if (!updateInstalledInfo) {
+              installedAppName = cached?.installedInfo == null
+                  ? null
+                  : cached?.app.name;
+            } else {
+              final bool installedPackageUnchanged =
+                  cached != null &&
+                  cached.installedInfo?.packageName == info?.packageName &&
+                  cached.installedInfo?.versionName == info?.versionName &&
+                  cached.installedInfo?.versionCode == info?.versionCode &&
+                  cached.installedInfo?.lastUpdateTime == info?.lastUpdateTime;
+              if (installedPackageUnchanged) {
+                installedAppName = info == null ? null : cached.app.name;
+              } else {
+                icon = null;
+                final applicationInfo = info?.applicationInfo;
+                if (applicationInfo != null) {
+                  try {
+                    icon = await applicationInfo.getAppIcon();
+                    installedAppName = await applicationInfo.getAppLabel();
+                  } catch (e) {
+                    unawaited(
+                      logs.add(
+                        'Installed package details unavailable for ${app.id}: $e',
+                      ),
+                    );
+                  }
+                }
+              }
+            }
+            app = app.copyWith(name: installedAppName ?? app.name);
+            if (attemptToCorrectInstallStatus) {
+              app = getCorrectedInstallStatusAppIfPossible(app, info) ?? app;
+            }
+            app = normalizeSkippedLatestVersion(app);
+            final sourceIdentifier =
+                cached?.sourceType ??
+                sourceProvider
+                    .getSourceTemplate(
+                      app.url,
+                      overrideSource: app.overrideSource,
+                    )
+                    .sourceIdentifier;
+            reconcileAppFolderMemberships(
+              app,
+              appFolders,
+              sourceIdentifier: sourceIdentifier,
+              isUpToDate: appIsUpToDateForFiltering(app),
+            );
+            if (!onlyIfExists || this.apps.containsKey(app.id)) {
+              final String filePath = '${appsDirectory.path}/${app.id}.json';
+              final String tmpPath =
+                  '$filePath.tmp_${DateTime.now().microsecondsSinceEpoch}_${_saveAppsTmpNonce++}';
+              final File tmpFile = File(tmpPath);
+              try {
+                await tmpFile.writeAsString(
+                  jsonEncode(app.toJson()),
+                  flush: true,
+                ); // #2089
+                await tmpFile.rename(filePath);
+              } finally {
                 try {
-                  icon = await applicationInfo.getAppIcon();
-                  installedAppName = await applicationInfo.getAppLabel();
-                } catch (e) {
+                  if (await tmpFile.exists()) {
+                    await tmpFile.delete();
+                  }
+                } catch (cleanupError) {
                   unawaited(
                     logs.add(
-                      'Installed package details unavailable for ${app.id}: $e',
+                      'Failed to clean save temp for ${app.id}: $cleanupError',
+                      level: LogLevel.warning,
                     ),
                   );
                 }
               }
             }
-          }
-          app = app.copyWith(name: installedAppName ?? app.name);
-          if (attemptToCorrectInstallStatus) {
-            app = getCorrectedInstallStatusAppIfPossible(app, info) ?? app;
-          }
-          app = normalizeSkippedLatestVersion(app);
-          final sourceIdentifier =
-              cached?.sourceType ??
-              sourceProvider
-                  .getSourceTemplate(
-                    app.url,
-                    overrideSource: app.overrideSource,
-                  )
-                  .sourceIdentifier;
-          reconcileAppFolderMemberships(
-            app,
-            appFolders,
-            sourceIdentifier: sourceIdentifier,
-            isUpToDate: appIsUpToDateForFiltering(app),
-          );
-          if (!onlyIfExists || this.apps.containsKey(app.id)) {
-            final String filePath = '${appsDirectory.path}/${app.id}.json';
-            await File(
-              '$filePath.tmp',
-            ).writeAsString(jsonEncode(app.toJson())); // #2089
-            await File('$filePath.tmp').rename(filePath);
-          }
-          if (cached != null) {
-            this.apps[app.id] = AppInMemory(
-              app,
-              cached.downloadProgress,
-              info,
-              icon,
-              sourceType: cached.sourceType,
-              download: cached.download,
-            );
-          } else if (!onlyIfExists) {
-            this.apps[app.id] = AppInMemory(app, null, info, icon);
-          }
-        }),
-      );
-      if (chunkEnd < apps.length) {
-        await Future<void>.delayed(Duration.zero);
+            if (cached != null) {
+              this.apps[app.id] = AppInMemory(
+                app,
+                cached.downloadProgress,
+                info,
+                icon,
+                sourceType: cached.sourceType,
+                download: cached.download,
+              );
+            } else if (!onlyIfExists) {
+              this.apps[app.id] = AppInMemory(app, null, info, icon);
+            }
+          }),
+        );
+        if (chunkEnd < effectiveApps.length) {
+          await Future<void>.delayed(Duration.zero);
+        }
       }
-    }
-    markAppsChanged();
-    notify();
-    if (autoExportAfterSave) {
-      scheduleAutoExport();
+      markAppsChanged();
+      notify();
+      if (autoExportAfterSave) {
+        scheduleAutoExport();
+      }
+    } finally {
+      saveCompletion.complete();
     }
   }
 

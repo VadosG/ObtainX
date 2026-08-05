@@ -185,6 +185,26 @@ class FakePackageInfo extends PackageInfo {
        );
 }
 
+App _buildPersistenceTestApp({
+  required String id,
+  required String name,
+  Map<String, dynamic> additionalSettings = const <String, dynamic>{},
+}) {
+  return App(
+    id: id,
+    url: 'https://github.com/example/$id',
+    author: 'Example',
+    name: name,
+    installedVersion: null,
+    latestVersion: '1.0.0',
+    apkUrls: const <MapEntry<String, String>>[],
+    preferredApkIndex: 0,
+    additionalSettings: additionalSettings,
+    lastUpdateCheck: DateTime.now(),
+    pinned: false,
+  );
+}
+
 class _FakePathProvider extends PathProviderPlatform
     with MockPlatformInterfaceMixin {
   _FakePathProvider(this._path);
@@ -1376,6 +1396,86 @@ This app description should not be included.
       expect(
         correctedApp?.installedVersion ?? app.installedVersion,
         'nightly-2026-07-20',
+      );
+    });
+  });
+
+  group('app JSON persistence', () {
+    test('later concurrent save wins for the same app ID', () async {
+      final Directory appsDirectory = Directory.systemTemp.createTempSync(
+        'obtainx_save_queue_',
+      );
+      addTearDown(() => appsDirectory.delete(recursive: true));
+      final AppsProvider appsProvider = AppsProvider(isBg: true)
+        ..cachedAppsDir = appsDirectory;
+      addTearDown(appsProvider.dispose);
+      const String appId = 'dev.example.concurrent';
+      final App olderApp = _buildPersistenceTestApp(
+        id: appId,
+        name: 'Older',
+        additionalSettings: <String, dynamic>{
+          'largePayload': List<String>.filled(2 * 1024 * 1024, 'x').join(),
+        },
+      );
+      final App newerApp = _buildPersistenceTestApp(id: appId, name: 'Newer');
+
+      final Future<void> olderSave = appsProvider.saveApps(
+        <App>[olderApp],
+        onlyIfExists: false,
+        updateInstalledInfo: false,
+        autoExportAfterSave: false,
+      );
+      await Future<void>.delayed(Duration.zero);
+      final Future<void> newerSave = appsProvider.saveApps(
+        <App>[newerApp],
+        onlyIfExists: false,
+        updateInstalledInfo: false,
+        autoExportAfterSave: false,
+      );
+      await Future.wait(<Future<void>>[olderSave, newerSave]);
+
+      final Map<String, dynamic> savedJson =
+          jsonDecode(
+                File('${appsDirectory.path}/$appId.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(savedJson['name'], 'Newer');
+      expect(
+        appsDirectory.listSync().where(
+          (FileSystemEntity entry) => entry.path.contains('.json.tmp_'),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('failed atomic replacement propagates and cleans its temp', () async {
+      final Directory appsDirectory = Directory.systemTemp.createTempSync(
+        'obtainx_save_failure_',
+      );
+      addTearDown(() => appsDirectory.delete(recursive: true));
+      final AppsProvider appsProvider = AppsProvider(isBg: true)
+        ..cachedAppsDir = appsDirectory;
+      addTearDown(appsProvider.dispose);
+      const String appId = 'dev.example.blocked';
+      Directory('${appsDirectory.path}/$appId.json').createSync();
+      final App app = _buildPersistenceTestApp(id: appId, name: 'Blocked');
+
+      await expectLater(
+        appsProvider.saveApps(
+          <App>[app],
+          onlyIfExists: false,
+          updateInstalledInfo: false,
+          autoExportAfterSave: false,
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(appsProvider.apps.containsKey(appId), isFalse);
+      expect(
+        appsDirectory.listSync().where(
+          (FileSystemEntity entry) => entry.path.contains('.json.tmp_'),
+        ),
+        isEmpty,
       );
     });
   });
