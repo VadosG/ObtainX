@@ -18,6 +18,7 @@ import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 
@@ -2111,5 +2112,33 @@ This app description should not be included.
       appUpdateIsUserVisible(ambiguous, includeVersionOrderUncertain: true),
       true,
     );
+  });
+
+  test('standard version matching and reconciliation ignore case', () {
+    expect(
+      findStandardFormatsForVersion('v2.9.9-Preview-251', false).isNotEmpty,
+      true,
+    );
+    expect(
+      reconcileVersionDifferences(
+        'v2.9.9-Preview-251',
+        'V2.9.9-preview-251',
+      )?.areEqual,
+      true,
+    );
+  });
+
+  test('GitHub smart-name release sorting ignores version case', () {
+    final releases = <dynamic>[
+      <String, dynamic>{'tag_name': 'v2.9.9-PREVIEW-251', 'prerelease': true},
+      <String, dynamic>{'tag_name': 'v2.9.9-preview-247', 'prerelease': true},
+    ];
+
+    GitHub().sortGitHubReleases(releases, 'smartname', false);
+
+    expect(releases.map((release) => release['tag_name']).toList(), <String>[
+      'v2.9.9-preview-247',
+      'v2.9.9-PREVIEW-251',
+    ]);
   });
 }

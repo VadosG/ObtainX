@@ -25,11 +25,13 @@ class VersionService {
 
   static final List<MapEntry<String, RegExp>> strictStandardVersionRegExes =
       standardVersionRegExStrings
-          .map((p) => MapEntry(p, RegExp('^$p\$')))
+          .map((p) => MapEntry(p, RegExp('^$p\$', caseSensitive: false)))
           .toList();
 
   static final List<MapEntry<String, RegExp>> looseStandardVersionRegExes =
-      standardVersionRegExStrings.map((p) => MapEntry(p, RegExp(p))).toList();
+      standardVersionRegExStrings
+          .map((p) => MapEntry(p, RegExp(p, caseSensitive: false)))
+          .toList();
 
   static List<String> _generateStandardVersionRegExStrings() {
     final basics = [
@@ -44,6 +46,7 @@ class VersionService {
       'beta',
       'rc',
       'pre',
+      'preview',
       'dev',
       'snapshot',
       'nightly',
@@ -164,12 +167,12 @@ class VersionService {
   }
 
   bool doStringsMatchUnderRegEx(String pattern, String value1, String value2) {
-    final r = RegExp(pattern);
-    final m1 = r.firstMatch(value1);
-    final m2 = r.firstMatch(value2);
-    return m1 != null && m2 != null
-        ? value1.substring(m1.start, m1.end) ==
-              value2.substring(m2.start, m2.end)
+    final regularExpression = RegExp(pattern, caseSensitive: false);
+    final firstMatch = regularExpression.firstMatch(value1);
+    final secondMatch = regularExpression.firstMatch(value2);
+    return firstMatch != null && secondMatch != null
+        ? value1.substring(firstMatch.start, firstMatch.end).toLowerCase() ==
+              value2.substring(secondMatch.start, secondMatch.end).toLowerCase()
         : false;
   }
 }
