@@ -858,9 +858,9 @@ class _ObtainiumState extends State<Obtainium> with WidgetsBindingObserver {
             scaffoldMessengerKey: scaffoldMessengerKey,
             debugShowCheckedModeBanner: false,
             themeAnimationDuration: Duration.zero,
-            // Cap the system scaler globally before applying the in-app UI
-            // scale. The default preserves Flutter's non-linear curve; a
-            // custom app scale uses a bounded linear approximation.
+            // Scale the complete app viewport while independently capping the
+            // system text scaler. This keeps text, controls, icons, spacing,
+            // overlays, and touch targets at the same user-selected scale.
             //
             // Nothing else belongs in this builder. It used to also install
             // FToastBuilder's app-wide Overlay around this MediaQuery, and an
@@ -871,16 +871,8 @@ class _ObtainiumState extends State<Obtainium> with WidgetsBindingObserver {
             // phone/tablet layout to whichever one the app started in. The
             // toast host now lives under [home] instead; see [AppToastHost].
             builder: (BuildContext context, Widget? child) {
-              final MediaQueryData mq = MediaQuery.of(context);
-              return MediaQuery(
-                data: mq.copyWith(
-                  textScaler: cappedAppTextScaler(
-                    systemTextScaler: mq.textScaler,
-                    userScale: settingsProvider.appUiScale,
-                    minimumEffectiveScale: SettingsProvider.appUiScaleMin,
-                    maximumEffectiveScale: SettingsProvider.appUiScaleMax,
-                  ),
-                ),
+              return AppUiScaler(
+                scale: settingsProvider.appUiScale,
                 child: child ?? const SizedBox.shrink(),
               );
             },

@@ -373,7 +373,11 @@ class _ImportExportPageState extends State<ImportExportPage> {
                             settingsProvider.getApkSaveDir(
                               requireAccess: false,
                             ),
-                            settingsProvider.getApkSaveDir(),
+                            settingsProvider.saveDownloadedApkCopies
+                                ? settingsProvider.getApkSaveDir()
+                                : settingsProvider.getApkSaveDir(
+                                    requireAccess: false,
+                                  ),
                           ]),
                           builder: (context, apkSaveSnapshot) {
                             final Uri? savedApkSaveUri =
@@ -488,7 +492,11 @@ class _ImportExportPageState extends State<ImportExportPage> {
                       FutureBuilder<List<Uri?>>(
                         future: Future.wait<Uri?>([
                           settingsProvider.getExportDir(requireAccess: false),
-                          settingsProvider.getExportDir(),
+                          settingsProvider.autoExportOnChanges
+                              ? settingsProvider.getExportDir()
+                              : settingsProvider.getExportDir(
+                                  requireAccess: false,
+                                ),
                         ]),
                         builder: (context, exportSnapshot) {
                           final Uri? savedExportUri = exportSnapshot.data?[0];

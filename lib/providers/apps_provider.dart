@@ -1295,6 +1295,9 @@ class AppsProvider with ChangeNotifier {
       NativeFeatures.registerDownloadCancelHandler(cancelDownload);
       NotificationsProvider.onDownloadCancelRequested = cancelDownload;
       NotificationsProvider.listenForDownloadCancelFromMain();
+      // Record third-party installs as soon as the system confirms them, instead
+      // of only when the handoff session manages to report success (#222).
+      listenForThirdPartyInstallResults();
     }
     () async {
       await this.settingsProvider.initializeSettings();
@@ -1359,6 +1362,9 @@ class AppsProvider with ChangeNotifier {
     foregroundSubscription?.cancel();
     _autoExportDebounce?.cancel();
     _eventSubscription?.cancel();
+    if (!_isBg) {
+      stopListeningForThirdPartyInstallResults();
+    }
     for (final Timer timer in deferredObtainiumTimers.values) {
       timer.cancel();
     }

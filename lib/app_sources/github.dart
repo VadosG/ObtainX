@@ -734,12 +734,19 @@ class GitHub extends AppSource {
       ? _getPublishDateFromRelease(rel)
       : _getNewestAssetDateFromRelease(rel);
 
-  void _sortGitHubReleases(
+  void sortGitHubReleases(
     List<dynamic> releases,
     String sortMethod,
     bool useLatestAssetDateAsReleaseDate,
   ) {
     if (sortMethod == 'none') return;
+
+    int compareReleaseDates(DateTime? firstDate, DateTime? secondDate) {
+      if (firstDate == null && secondDate == null) return 0;
+      if (firstDate == null) return -1;
+      if (secondDate == null) return 1;
+      return firstDate.compareTo(secondDate);
+    }
 
     // Precompute dates and (for smartname/name sorts) per-release format
     // sets once. Memoization in findStandardFormatsForVersion already handles
@@ -749,61 +756,95 @@ class GitHub extends AppSource {
     final Map<dynamic, DateTime?> dates = {};
     final Map<dynamic, Set<String>> formats = {};
     if (!isDateOnly) {
-      for (final r in releases) {
-        if (r == null) continue;
-        final name = (r['tag_name'] ?? r['name'])?.toString() ?? '';
-        formats[r] = findStandardFormatsForVersion(name, false);
+      for (final release in releases) {
+        if (release == null) continue;
+        final name = (release['tag_name'] ?? release['name'])?.toString() ?? '';
+        formats[release] = findStandardFormatsForVersion(name, false);
       }
     }
 
-    releases.sort((a, b) {
-      if (a == null) return -1;
-      if (b == null) return 1;
+    releases.sort((firstRelease, secondRelease) {
+      if (firstRelease == null && secondRelease == null) return 0;
+      if (firstRelease == null) return -1;
+      if (secondRelease == null) return 1;
 
       if (isDateOnly) {
-        final dateA = dates.putIfAbsent(
-          a,
-          () => _getReleaseDateFromRelease(a, useLatestAssetDateAsReleaseDate),
+        final firstDate = dates.putIfAbsent(
+          firstRelease,
+          () => _getReleaseDateFromRelease(
+            firstRelease,
+            useLatestAssetDateAsReleaseDate,
+          ),
         );
-        final dateB = dates.putIfAbsent(
-          b,
-          () => _getReleaseDateFromRelease(b, useLatestAssetDateAsReleaseDate),
+        final secondDate = dates.putIfAbsent(
+          secondRelease,
+          () => _getReleaseDateFromRelease(
+            secondRelease,
+            useLatestAssetDateAsReleaseDate,
+          ),
         );
-        return (dateA ?? DateTime(1)).compareTo(dateB ?? DateTime(0));
+        return compareReleaseDates(firstDate, secondDate);
       }
 
-      final nameA = a['tag_name'] ?? a['name'];
-      final nameB = b['tag_name'] ?? b['name'];
-      final stdFormats = formats[a]!.intersection(formats[b]!);
+      final firstName =
+          (firstRelease['tag_name'] ?? firstRelease['name'])?.toString() ?? '';
+      final secondName =
+          (secondRelease['tag_name'] ?? secondRelease['name'])?.toString() ??
+          '';
+      final standardFormats = formats[firstRelease]!.intersection(
+        formats[secondRelease]!,
+      );
 
-      if (sortMethod == 'smartname-datefallback' && stdFormats.isEmpty) {
-        final dateA = _getReleaseDateFromRelease(
-          a,
+      if (sortMethod == 'smartname-datefallback' && standardFormats.isEmpty) {
+        final firstDate = _getReleaseDateFromRelease(
+          firstRelease,
           useLatestAssetDateAsReleaseDate,
         );
-        final dateB = _getReleaseDateFromRelease(
-          b,
+        final secondDate = _getReleaseDateFromRelease(
+          secondRelease,
           useLatestAssetDateAsReleaseDate,
         );
-        return (dateA ?? DateTime(1)).compareTo(dateB ?? DateTime(0));
+        return compareReleaseDates(firstDate, secondDate);
       }
 
-      if (sortMethod != 'name' && stdFormats.isNotEmpty) {
-        final sortedFormats = stdFormats.toList()
-          ..sort((x, y) => y.length.compareTo(x.length));
-        final reg = RegExp(sortedFormats.first);
-        final matchA = reg.firstMatch(nameA);
-        final matchB = reg.firstMatch(nameB);
-        if (matchA == null || matchB == null) {
-          return compareAlphaNumeric(nameA as String, nameB as String);
+      if (sortMethod != 'name' && standardFormats.isNotEmpty) {
+        final sortedFormats = standardFormats.toList()
+          ..sort(
+            (firstPattern, secondPattern) =>
+                secondPattern.length.compareTo(firstPattern.length),
+          );
+        final standardFormatPattern = RegExp(
+          sortedFormats.first,
+          caseSensitive: false,
+        );
+        final firstMatch = standardFormatPattern.firstMatch(firstName);
+        final secondMatch = standardFormatPattern.firstMatch(secondName);
+        if (firstMatch != null && secondMatch != null) {
+          final versionComparison = compareAlphaNumeric(
+            firstName.substring(firstMatch.start, firstMatch.end).toLowerCase(),
+            secondName
+                .substring(secondMatch.start, secondMatch.end)
+                .toLowerCase(),
+          );
+          if (versionComparison != 0) return versionComparison;
         }
-        return compareAlphaNumeric(
-          (nameA as String).substring(matchA.start, matchA.end),
-          (nameB as String).substring(matchB.start, matchB.end),
-        );
       }
 
-      return compareAlphaNumeric(nameA as String, nameB as String);
+      final nameComparison = compareAlphaNumeric(
+        firstName.toLowerCase(),
+        secondName.toLowerCase(),
+      );
+      if (nameComparison != 0) return nameComparison;
+
+      final firstDate = _getReleaseDateFromRelease(
+        firstRelease,
+        useLatestAssetDateAsReleaseDate,
+      );
+      final secondDate = _getReleaseDateFromRelease(
+        secondRelease,
+        useLatestAssetDateAsReleaseDate,
+      );
+      return compareReleaseDates(firstDate, secondDate);
     });
   }
 
@@ -1090,7 +1131,7 @@ class GitHub extends AppSource {
       if (sortMethod == 'none') {
         releases = releases.reversed.toList();
       } else {
-        _sortGitHubReleases(
+        sortGitHubReleases(
           releases,
           sortMethod,
           useLatestAssetDateAsReleaseDate,

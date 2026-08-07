@@ -19,12 +19,14 @@ import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/components/app_detail_widgets.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/installers/dhizuku_installer.dart';
+import 'package:obtainium/installers/external_installer.dart';
 import 'package:obtainium/installers/installer.dart';
 import 'package:obtainium/installers/shizuku_installer.dart';
 import 'package:obtainium/installers/stock_installer.dart';
-import 'package:obtainium/installers/external_installer.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/providers/installer_provider.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
@@ -260,11 +262,56 @@ bool isStockInstallerDowngrade({
 
 /// App download, install, and on-device package operations for [AppsProvider].
 extension AppsProviderInstall on AppsProvider {
+  /// Starts recording third-party installs the moment the system confirms them.
+  ///
+  /// [ExternalInstaller] cannot learn its own result — the target app never
+  /// reports one — so success is inferred natively from the
+  /// PACKAGE_ADDED/PACKAGE_REPLACED broadcast plus a focus-regain heuristic. That
+  /// inference is lossy: if this activity is destroyed while the installer app is
+  /// in front, or focus returns before the broadcast lands, `installApk`'s
+  /// success branch never runs and the app keeps reporting its old version
+  /// (#222). The broadcast is itself proof that the install landed, so persist it
+  /// as soon as it arrives rather than relying only on the session result.
+  ///
+  /// The native side only forwards broadcasts for the package of the install it
+  /// launched, so this cannot be triggered by unrelated package changes.
+  void listenForThirdPartyInstallResults() =>
+      registerThirdPartyInstallPackageChangedCallback(
+        recordThirdPartyInstallBroadcast,
+      );
+
+  void stopListeningForThirdPartyInstallResults() =>
+      registerThirdPartyInstallPackageChangedCallback(null);
+
+  /// See [listenForThirdPartyInstallResults].
+  Future<void> recordThirdPartyInstallBroadcast(String packageName) async {
+    final AppInMemory? entry = apps[packageName];
+    if (entry == null) return;
+    final App app = entry.app;
+    if (app.latestVersion.isEmpty ||
+        app.installedVersion == app.latestVersion) {
+      return;
+    }
+    entry.app = app.copyWith(installedVersion: app.latestVersion);
+    // Install-status correction is skipped on purpose: the manifest version of
+    // what was just installed can be unrelatable to the source's version string,
+    // and this broadcast is the authoritative signal about what landed.
+    await saveApps([entry.app], attemptToCorrectInstallStatus: false);
+    unawaited(
+      logs.add(
+        'Recorded third-party install of $packageName as version '
+        '"${app.latestVersion}" (system broadcast)',
+      ),
+    );
+  }
+
   /// Returns the [Installer] strategy for the current installer mode setting.
   Installer getInstaller() {
     switch (settingsProvider.installerMode) {
       case 'shizuku':
         return ShizukuInstaller(settingsProvider);
+      case 'dhizuku':
+        return DhizukuInstaller(settingsProvider);
       // Third-party installer. Value matches upstream Obtainium's
       // InstallerMode.external.name.
       case 'external':
@@ -1061,6 +1108,18 @@ extension AppsProviderInstall on AppsProvider {
     }
     if (result.isError) {
       throw InstallError(result.errorCode!);
+    }
+    final AppInMemory? entryToSave = apps[file.appId];
+    if (installed && entryToSave != null) {
+      // Re-apply the recorded version rather than trusting the in-memory entry to
+      // still carry the assignment made above. Handing off to a third-party
+      // installer sends this app to the background, and coming back fires
+      // loadApps(silent: true), which rebuilds every entry from the (still stale)
+      // JSON on disk — that can land inside the file/SAF work above and drop the
+      // version this install just recorded (#222).
+      entryToSave.app = entryToSave.app.copyWith(
+        installedVersion: entryToSave.app.latestVersion,
+      );
     }
     await saveApps([apps[file.appId]!.app]);
     return installed;

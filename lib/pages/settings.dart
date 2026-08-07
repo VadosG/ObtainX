@@ -37,13 +37,12 @@ import 'package:obtainium/theme.dart';
 import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
-import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shizuku_apk_installer/shizuku_apk_installer.dart';
+import 'package:shizuku_apk_installer/shizuku_apk_installer.dart' as shizuku;
 import 'package:url_launcher/url_launcher_string.dart';
 
 IconData _swipeActionIcon(SwipeAction action) => switch (action) {
@@ -1101,7 +1100,9 @@ class _UpdatesSection extends StatelessWidget {
     final List<Widget> rows = <Widget>[_UpdateIntervalSlider(cs: cs)];
     final bool showBgControls =
         (sp.updateInterval > 0) &&
-        (((snapshot.data?.version.sdkInt ?? 0) >= 30) || sp.useShizuku);
+        (((snapshot.data?.version.sdkInt ?? 0) >= 30) ||
+            sp.useShizuku ||
+            sp.useDhizuku);
     if (showBgControls) {
       rows
         ..add(
@@ -2948,69 +2949,84 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
         Padding(
           padding: const EdgeInsets.fromLTRB(
             kM3eSettingsCardHorizontalInset,
-            8,
+            12,
             kM3eSettingsCardHorizontalInset,
-            4,
+            12,
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(tr('installerMode')),
-              const SizedBox(height: 4),
-              SizedBox(
-                width: double.infinity,
-                child: AppSegmentedButton<String>(
-                  segments: [
-                    ButtonSegment<String>(
-                      value: 'system',
-                      label: AppSegmentedButtonLabel(tr('installerModeStock')),
-                    ),
-                    ButtonSegment<String>(
-                      value: 'shizuku',
-                      label: AppSegmentedButtonLabel(
-                        tr('installerModeShizuku'),
-                      ),
-                    ),
-                    ButtonSegment<String>(
-                      value: 'external',
-                      label: AppSegmentedButtonLabel(
-                        tr('installerModeThirdParty'),
-                      ),
-                    ),
-                  ],
-                  selected: {sp.installerMode},
-                  onSelectionChanged: (Set<String> selected) {
-                    final String mode = selected.first;
-                    if (mode == 'shizuku') {
-                      ShizukuApkInstaller().checkPermission().then((
-                        String? resCode,
-                      ) {
-                        if (!context.mounted) return;
-                        if (resCode!.startsWith('granted')) {
-                          sp.installerMode = 'shizuku';
-                        } else {
-                          switch (resCode) {
-                            case 'services_not_found':
-                              showError(
-                                ObtainiumError(tr('shizukuBinderNotFound')),
-                              );
-                            case 'old_shizuku':
-                              showError(ObtainiumError(tr('shizukuOld')));
-                            case 'old_android_with_adb':
-                              showError(
-                                ObtainiumError(tr('shizukuOldAndroidWithADB')),
-                              );
-                            case 'denied':
-                              showError(ObtainiumError(tr('cancelled')));
-                          }
-                        }
-                      });
-                    } else {
-                      sp.installerMode = mode;
+              appDropdownField<String>(
+                key: ValueKey('installerMode_${sp.installerMode}'),
+                context: context,
+                value: sp.installerMode,
+                labelText: tr('installerMode'),
+                updateInternalValueOnChange: false,
+                items: [
+                  DropdownMenuItem<String>(
+                    value: 'system',
+                    child: Text(tr('installerModeStock')),
+                  ),
+                  DropdownMenuItem<String>(
+                    value: 'shizuku',
+                    child: Text(tr('installerModeShizuku')),
+                  ),
+                  DropdownMenuItem<String>(
+                    value: 'dhizuku',
+                    child: Text(tr('installerModeDhizuku')),
+                  ),
+                  DropdownMenuItem<String>(
+                    value: 'external',
+                    child: Text(tr('installerModeThirdParty')),
+                  ),
+                ],
+                onChanged: (String? mode) async {
+                  if (mode == null) return;
+                  if (mode == 'shizuku' || mode == 'dhizuku') {
+                    final String binderNotFoundKey = mode == 'dhizuku'
+                        ? 'dhizukuBinderNotFound'
+                        : 'shizukuBinderNotFound';
+                    final shizuku.ShizukuApkInstaller selectedInstaller =
+                        shizuku.ShizukuApkInstaller();
+                    String? resCode;
+                    try {
+                      await selectedInstaller.setInstallerMode(
+                        mode == 'dhizuku'
+                            ? shizuku.InstallerMode.dhizuku
+                            : shizuku.InstallerMode.shizuku,
+                      );
+                      resCode = await selectedInstaller.checkPermission();
+                    } on Exception {
+                      if (!context.mounted) return;
+                      showError(ObtainiumError(tr(binderNotFoundKey)));
+                      return;
                     }
-                  },
-                ),
+                    if (!context.mounted) return;
+                    final bool granted = mode == 'dhizuku'
+                        ? resCode == 'granted_owner'
+                        : (resCode == 'granted_adb' ||
+                              resCode == 'granted_root');
+                    if (granted) {
+                      sp.installerMode = mode;
+                    } else {
+                      switch (resCode) {
+                        case 'services_not_found':
+                          showError(ObtainiumError(tr(binderNotFoundKey)));
+                        case 'old_shizuku':
+                          showError(ObtainiumError(tr('shizukuOld')));
+                        case 'old_android_with_adb':
+                          showError(
+                            ObtainiumError(tr('shizukuOldAndroidWithADB')),
+                          );
+                        default:
+                          showError(ObtainiumError(tr('cancelled')));
+                      }
+                    }
+                  } else {
+                    sp.installerMode = mode;
+                  }
+                },
               ),
               if (sp.installerMode == 'shizuku')
                 AppSwitchListTile(
@@ -3673,6 +3689,7 @@ class _LogsDialogState extends State<LogsDialog> {
 
       buffer.writeln('Installer Mode: ${settingsProvider.installerMode}');
       buffer.writeln('Use Shizuku: ${settingsProvider.useShizuku}');
+      buffer.writeln('Use Dhizuku: ${settingsProvider.useDhizuku}');
       buffer.writeln(
         'Background Updates: ${settingsProvider.enableBackgroundUpdates}',
       );

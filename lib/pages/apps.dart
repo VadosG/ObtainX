@@ -616,6 +616,54 @@ int _appsPageAppsRebuildToken(AppsProvider provider) {
   );
 }
 
+/// Companion of [_appsPageAppsRebuildToken] for [SettingsProvider]: a hash of
+/// only the settings this page actually reads, so unrelated setting changes
+/// don't rebuild the whole apps tree. [viewSettingsId] is the per-view override
+/// bucket (a folder id, or the synthetic on-demand id); null on the main page.
+int _appsPageSettingsRebuildToken(SettingsProvider s, String? viewSettingsId) {
+  return Object.hashAll([
+    s.showFolderedAppsOnMainPage,
+    s.pinUpdates,
+    s.buryNonInstalled,
+    s.sortColumn,
+    s.sortOrder,
+    s.appsListGroupBy,
+    s.groupNonInstalledSeparately,
+    s.groupTrackOnlySeparately,
+    s.groupUpdatesSeparately,
+    // categories is a Map<String?, int>; hash by length + sorted entries.
+    Object.hashAll(s.categories.entries.map((e) => '${e.key}=${e.value}')),
+    s.showAppTypeBadge,
+    s.showTrackedStoreBadge,
+    s.showCategoriesBadge,
+    s.showAuthorBadge,
+    s.showVersionBadge,
+    s.highlightTouchTargets,
+    s.progressiveBlurEnabled,
+    s.reduceVisualEffects,
+    s.useGradientBackground,
+    s.cardCornerScale,
+    s.leftSwipeAction,
+    s.rightSwipeAction,
+    s.alwaysUsePhoneLayout,
+    s.appFolders.length,
+    // Per-view overrides: relevant for real folders and the synthetic
+    // On-Demand Only view; a hash-as-zero collapse for the main page.
+    viewSettingsId == null
+        ? 0
+        : Object.hash(
+            s.folderPinUpdates(viewSettingsId),
+            s.folderBuryNonInstalled(viewSettingsId),
+            s.folderSortColumn(viewSettingsId).index,
+            s.folderSortOrder(viewSettingsId).index,
+            s.folderGroupBy(viewSettingsId).index,
+            s.folderGroupNonInstalledSeparately(viewSettingsId),
+            s.folderGroupTrackOnlySeparately(viewSettingsId),
+            s.folderGroupUpdatesSeparately(viewSettingsId),
+          ),
+  ]);
+}
+
 /// Progress bar shown during pull-to-refresh and initial app-load.
 ///
 /// Subscribes to [AppsProvider] via a narrow [context.select] that returns
@@ -2887,6 +2935,33 @@ class AppsPageState extends State<AppsPage> {
   Map<String, int> _folderAppCountsCache = const {};
   Map<String, int> _folderUpdateCountsCache = const {};
 
+  // ── Covered-page rebuild suppression ──────────────────────────────────────
+  // A folder list, the On-Demand list and an app's detail page are all opaque
+  // routes pushed over this one, and Flutter's Overlay marks the covered entry
+  // offstage: never laid out, never painted — but still BUILT, because it is
+  // still an [AppsProvider] dependent. Pull-to-refresh inside a folder notifies
+  // the provider on every batched save, which used to rebuild the invisible
+  // main page too (re-running its whole filter/sort/group pass, its
+  // O(apps × folders) folder-count pass, and — via [onStateChanged] — the entire
+  // home shell). That doubled the UI-thread work per refresh tick and was what
+  // made the refresh animation stutter inside a folder but not on the main list.
+  //
+  // provider's [context.select] only marks a dependent dirty when the selector's
+  // RESULT changes, so while covered we return the last-known token instead of a
+  // fresh one and the rebuild never happens. (Skipping the select() call
+  // outright would NOT work: Element._dependencies is only cleared on
+  // deactivate, so the subscription would survive.)
+  //
+  // [TickerMode.valuesOf] is the signal: the Overlay disables it for covered
+  // entries (via _OverlayEntryWidget's `tickerEnabled: false`), and
+  // [_DirectionalIndexedStack] does the same for inactive home tabs — so this
+  // also stops the apps tab rebuilding while another tab is showing. Modal
+  // sheets and dialogs are *non-opaque* routes, so they leave TickerMode alone
+  // and the list behind them keeps live-updating as before.
+  bool _coveredByOpaqueRoute = false;
+  int _lastAppsToken = 0;
+  int _lastSettingsToken = 0;
+
   /// Pushes FAB badge / mass-obtain / selection state to [HomePage] without
   /// calling [setState] on the home shell.
   int? _lastNotifiedPageUpdateCount;
@@ -3331,12 +3406,21 @@ class AppsPageState extends State<AppsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Is this page currently visible, or is it sitting under an opaque pushed
+    // route / an inactive home tab? See [_coveredByOpaqueRoute]. Read (and
+    // cached into the field) before the select()s below, because their selectors
+    // run later, on provider notifications, and read the field.
+    final bool pageVisible = TickerMode.valuesOf(context).enabled;
+    _coveredByOpaqueRoute = !pageVisible;
+
     // select() prevents rebuilds for notifications that don't affect list data
     // (download-progress ticks, icon-load completions). The returned token is
     // also used as part of the list-computation cache key below.
     final int appsToken = context.select<AppsProvider, int>(
-      _appsPageAppsRebuildToken,
+      (p) =>
+          _coveredByOpaqueRoute ? _lastAppsToken : _appsPageAppsRebuildToken(p),
     );
+    _lastAppsToken = appsToken;
     final appsProvider = context.read<AppsProvider>();
     // Narrow the SettingsProvider dependency to a hash of just the settings
     // that actually affect this page's build. The previous
@@ -3355,48 +3439,10 @@ class AppsPageState extends State<AppsPage> {
     // every other setting the page references (folder rule lookups,
     // setter calls, etc.).
     final String? watchedViewSettingsId = _viewSettingsId;
-    context.select<SettingsProvider, int>(
-      (s) => Object.hashAll([
-        s.showFolderedAppsOnMainPage,
-        s.pinUpdates,
-        s.buryNonInstalled,
-        s.sortColumn,
-        s.sortOrder,
-        s.appsListGroupBy,
-        s.groupNonInstalledSeparately,
-        s.groupTrackOnlySeparately,
-        s.groupUpdatesSeparately,
-        // categories is a Map<String?, int>; hash by length + sorted entries.
-        Object.hashAll(s.categories.entries.map((e) => '${e.key}=${e.value}')),
-        s.showAppTypeBadge,
-        s.showTrackedStoreBadge,
-        s.showCategoriesBadge,
-        s.showAuthorBadge,
-        s.showVersionBadge,
-        s.highlightTouchTargets,
-        s.progressiveBlurEnabled,
-        s.reduceVisualEffects,
-        s.useGradientBackground,
-        s.cardCornerScale,
-        s.leftSwipeAction,
-        s.rightSwipeAction,
-        s.alwaysUsePhoneLayout,
-        s.appFolders.length,
-        // Per-view overrides: relevant for real folders and the synthetic
-        // On-Demand Only view; a hash-as-zero collapse for the main page.
-        watchedViewSettingsId == null
-            ? 0
-            : Object.hash(
-                s.folderPinUpdates(watchedViewSettingsId),
-                s.folderBuryNonInstalled(watchedViewSettingsId),
-                s.folderSortColumn(watchedViewSettingsId).index,
-                s.folderSortOrder(watchedViewSettingsId).index,
-                s.folderGroupBy(watchedViewSettingsId).index,
-                s.folderGroupNonInstalledSeparately(watchedViewSettingsId),
-                s.folderGroupTrackOnlySeparately(watchedViewSettingsId),
-                s.folderGroupUpdatesSeparately(watchedViewSettingsId),
-              ),
-      ]),
+    _lastSettingsToken = context.select<SettingsProvider, int>(
+      (s) => _coveredByOpaqueRoute
+          ? _lastSettingsToken
+          : _appsPageSettingsRebuildToken(s, watchedViewSettingsId),
     );
     final SettingsProvider settingsProvider = context.read<SettingsProvider>();
     final existingFolderIds = settingsProvider.appFolders
@@ -3508,7 +3554,11 @@ class AppsPageState extends State<AppsPage> {
           });
     }
 
-    if (!widget.onDemandOnlyList &&
+    // `pageVisible` guard: [checkJustStarted] is a one-shot latch, so a covered
+    // page must not consume it — otherwise the startup auto-refresh would run on
+    // an offstage list (with no visible indicator) instead of the one on screen.
+    if (pageVisible &&
+        !widget.onDemandOnlyList &&
         !appsProvider.loadingApps &&
         appsProvider.apps.isNotEmpty &&
         settingsProvider.checkJustStarted() &&
