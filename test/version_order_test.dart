@@ -1235,13 +1235,16 @@ This app description should not be included.
     App issue222App({
       required String? installedVersion,
       required String latestVersion,
+      String id = 'io.github.kichikuou.xsystem35',
       String url = 'https://github.com/kichikuou/xsystem35-sdl2',
+      String author = 'kichikuou',
+      String name = 'xsystem35',
       Map<String, dynamic>? additionalSettings,
     }) => App(
-      id: 'io.github.kichikuou.xsystem35',
+      id: id,
       url: url,
-      author: 'kichikuou',
-      name: 'xsystem35',
+      author: author,
+      name: name,
       installedVersion: installedVersion,
       latestVersion: latestVersion,
       apkUrls: const <MapEntry<String, String>>[],
@@ -1300,6 +1303,63 @@ This app description should not be included.
       expect(correctedApp!.installedVersion, 'v7.1.1');
       expect(appHasActionableUpdate(correctedApp), false);
     });
+
+    test(
+      'shorter device version is not rewritten to a longer source tag (ZipXtract)',
+      () {
+        // Device is on 7.1; GitHub latest is v7.1.1. A short shared format
+        // ([0-9]+\\.[0-9]+) used to match the '7.1' prefix inside 'v7.1.1' and
+        // step 3 rewrote installedVersion to the source latest, which then
+        // looked like a pseudo-version and hid the update forever.
+        expect(reconcileVersionDifferences('7.1', 'v7.1.1')?.areEqual, false);
+        expect(versionsEffectivelyEqual('7.1', 'v7.1.1'), false);
+
+        final app = issue222App(
+          id: 'com.wirelessalien.zipxtract',
+          url: 'https://github.com/WirelessAlien/ZipXtract',
+          author: 'WirelessAlien',
+          name: 'ZipXtract',
+          installedVersion: null,
+          latestVersion: 'v7.1.1',
+        );
+
+        final correctedApp = correct(
+          app,
+          deviceVersionName: '7.1',
+          deviceVersionCode: 25,
+        );
+
+        expect(correctedApp, isNotNull);
+        expect(correctedApp!.installedVersion, '7.1');
+        expect(correctedApp.additionalSettings['versionDetection'], 'auto');
+        expect(appHasActionableUpdate(correctedApp), true);
+      },
+    );
+
+    test(
+      'pull-to-refresh heals a ZipXtract install wrongly pinned to source latest',
+      () {
+        final app = issue222App(
+          id: 'com.wirelessalien.zipxtract',
+          url: 'https://github.com/WirelessAlien/ZipXtract',
+          author: 'WirelessAlien',
+          name: 'ZipXtract',
+          installedVersion: 'v7.1.1',
+          latestVersion: 'v7.1.1',
+        );
+
+        final correctedApp = correct(
+          app,
+          deviceVersionName: '7.1',
+          deviceVersionCode: 25,
+        );
+
+        expect(correctedApp, isNotNull);
+        expect(correctedApp!.installedVersion, '7.1');
+        expect(correctedApp.additionalSettings['versionDetection'], 'auto');
+        expect(appHasActionableUpdate(correctedApp), true);
+      },
+    );
 
     test('both sides keeping the full manifest string', () {
       final app = issue222App(
@@ -1548,8 +1608,15 @@ This app description should not be included.
   );
 
   test(
-    'partially sha-like version updates (e.g. 26.06 to 26.07.1a2b3c4) do not disable version detection',
+    'dot-separated hash suffix is not the same release as its numeric core',
     () {
+      expect(reconcileVersionDifferences('26.06', '26.06.9df4c85')?.areEqual, false);
+      expect(reconcileVersionDifferences('26.06', '26.06-9df4c85')?.areEqual, true);
+      expect(
+        reconcileVersionDifferences('2.19.1', '2.19.1 (git 50a6b17)')?.areEqual,
+        true,
+      );
+
       final appsProvider = AppsProvider(isBg: true);
       final app = App(
         id: 'app.example',
@@ -1574,9 +1641,12 @@ This app description should not be included.
         ),
       );
 
-      expect(correctedApp, isNull);
-      expect(app.additionalSettings['versionDetection'], 'auto');
-      expect(app.installedVersion, '26.06.9df4c85');
+      // Device 26.06 and stored 26.06.9df4c85 are related but not the same
+      // release string, so the device core is adopted and detection stays on.
+      expect(correctedApp, isNotNull);
+      expect(correctedApp!.additionalSettings['versionDetection'], 'auto');
+      expect(correctedApp.installedVersion, '26.06');
+      expect(appHasActionableUpdate(correctedApp), true);
     },
   );
 

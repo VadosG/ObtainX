@@ -167,13 +167,31 @@ class VersionService {
   }
 
   bool doStringsMatchUnderRegEx(String pattern, String value1, String value2) {
+    final List<String>? matchedCores = matchedSubstringsUnderRegEx(
+      pattern,
+      value1,
+      value2,
+    );
+    return matchedCores != null && matchedCores[0] == matchedCores[1];
+  }
+
+  /// First regex captures from [value1] and [value2], lowercased. Null when
+  /// either side has no match.
+  List<String>? matchedSubstringsUnderRegEx(
+    String pattern,
+    String value1,
+    String value2,
+  ) {
     final regularExpression = RegExp(pattern, caseSensitive: false);
     final firstMatch = regularExpression.firstMatch(value1);
     final secondMatch = regularExpression.firstMatch(value2);
-    return firstMatch != null && secondMatch != null
-        ? value1.substring(firstMatch.start, firstMatch.end).toLowerCase() ==
-              value2.substring(secondMatch.start, secondMatch.end).toLowerCase()
-        : false;
+    if (firstMatch == null || secondMatch == null) {
+      return null;
+    }
+    return <String>[
+      value1.substring(firstMatch.start, firstMatch.end).toLowerCase(),
+      value2.substring(secondMatch.start, secondMatch.end).toLowerCase(),
+    ];
   }
 }
 
@@ -355,8 +373,14 @@ class VersionComparison {
 ///
 /// DIRECTIONAL: [templateVersion] (the authoritative side — normally the real
 /// device version) is matched strictly, while [comparisonVersion] may fall back
-/// to loose matching. `('1', 'v1.1.0')` is therefore equal while
-/// `('v1.1.0', '1')` is unrelatable; argument order matters.
+/// to loose matching. A shared-format substring match is not enough for
+/// equality when one side continues with another dotted segment
+/// (`('7.1', 'v7.1.1')`, `('26.06', '26.06.9df4c85')`). Suffixes after a
+/// non-dot delimiter still count as the same release
+/// (`('26.06', '26.06-9df4c85')`, `('2.19.1', '2.19.1 (git 50a6b17)')`).
+/// Zero-only dotted padding (`('1.2', '1.2.0')`) remains equal. Argument order
+/// still matters for relatability (`('v7.1.1', '7.1')` stays unrelatable
+/// because the v-prefixed template has no strict format).
 ///
 /// There used to be a second copy of this function as an extension member on
 /// `AppsProvider` (in apps_provider_lifecycle.dart). Because an extension member
@@ -418,15 +442,65 @@ VersionComparison? reconcileVersionDifferences(
     return null;
   }
   for (String pattern in commonStandardFormats) {
-    if (VersionService().doStringsMatchUnderRegEx(
-      pattern,
-      comparisonVersion,
-      templateVersion,
-    )) {
-      return VersionComparison(areEqual: true, version: comparisonVersion);
+    final List<String>? matchedCores = VersionService()
+        .matchedSubstringsUnderRegEx(
+          pattern,
+          comparisonVersion,
+          templateVersion,
+        );
+    if (matchedCores == null || matchedCores[0] != matchedCores[1]) {
+      continue;
     }
+    // Same core under this pattern, but a short pattern can match a prefix of
+    // a longer dotted version ('7.1' inside 'v7.1.1', '26.06' inside
+    // '26.06.9df4c85'). Any further dotted segment is a different release;
+    // suffixes after space/paren/hyphen/etc. are not.
+    if (_matchedCoreHasAdditionalDottedSegment(
+          comparisonVersion,
+          matchedCores[0],
+        ) ||
+        _matchedCoreHasAdditionalDottedSegment(
+          templateVersion,
+          matchedCores[1],
+        )) {
+      continue;
+    }
+    return VersionComparison(areEqual: true, version: comparisonVersion);
   }
   return VersionComparison(areEqual: false, version: templateVersion);
+}
+
+/// True when [matchedCore] appears in [version] and is followed by another
+/// dotted segment that is not zero-only numeric padding.
+///
+/// Dot-separated extensions are different releases (`7.1.1`, `26.06.9df4c85`).
+/// Non-dot delimiters keep the same release (`26.06-9df4c85`,
+/// `2.19.1 (git 50a6b17)`). Zero-only padding (`1.2.0` after core `1.2`) does
+/// not count.
+bool _matchedCoreHasAdditionalDottedSegment(
+  String version,
+  String matchedCore,
+) {
+  final String normalizedVersion = _normalizeVersionForComparison(version);
+  final String normalizedCore = matchedCore.toLowerCase();
+  if (normalizedCore.isEmpty) {
+    return false;
+  }
+  final int coreAt = normalizedVersion.indexOf(normalizedCore);
+  if (coreAt < 0) {
+    return false;
+  }
+  final String remainder = normalizedVersion.substring(
+    coreAt + normalizedCore.length,
+  );
+  if (!remainder.startsWith('.')) {
+    return false;
+  }
+  final String dottedSuffix = remainder.substring(1);
+  if (dottedSuffix.isEmpty) {
+    return false;
+  }
+  return !_isOnlyZeroSegments(dottedSuffix);
 }
 
 /// Relates two versions that share a *shape* (digits replaced by `#`) but no

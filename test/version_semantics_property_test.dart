@@ -144,11 +144,12 @@ void main() {
   test('reconcileVersionDifferences is symmetric when both sides are standard', () {
     // Reconciliation is DIRECTIONAL by design: the template (first argument, the
     // real device version) is matched strictly, while the comparison version may
-    // fall back to loose matching. So `('1', 'v1.1.0')` is equal but
-    // `('v1.1.0', '1')` is unrelatable. The verdict is only guaranteed to be
-    // direction-independent when both sides have a strict standard format — argument
-    // order matters everywhere else, which is why the two former copies of this
-    // function could disagree without any example test noticing.
+    // fall back to loose matching. A pair can therefore be relatable in one
+    // direction and unrelatable in the other (e.g. `('7.1', 'v7.1.1')` vs
+    // `('v7.1.1', '7.1')`). The equality verdict is only guaranteed to be
+    // direction-independent when both sides have a strict standard format —
+    // argument order matters everywhere else, which is why the two former
+    // copies of this function could disagree without any example test noticing.
     _forEachPair((String a, String b) {
       final bool bothStandard =
           findStandardFormatsForVersion(a, true).isNotEmpty &&
