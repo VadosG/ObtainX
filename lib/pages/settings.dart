@@ -24,6 +24,7 @@ import 'package:obtainium/components/tv_slider_wrapper.dart';
 import 'package:obtainium/components/ui_widgets.dart'
     show AppSwitch, AppSwitchListTile;
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/installers/shizuku_plugin.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/app_sources/gitlab.dart';
@@ -2987,27 +2988,19 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                     final String binderNotFoundKey = mode == 'dhizuku'
                         ? 'dhizukuBinderNotFound'
                         : 'shizukuBinderNotFound';
-                    final shizuku.ShizukuApkInstaller selectedInstaller =
-                        shizuku.ShizukuApkInstaller();
+                    final shizuku.InstallerMode pluginMode = mode == 'dhizuku'
+                        ? shizuku.InstallerMode.dhizuku
+                        : shizuku.InstallerMode.shizuku;
                     String? resCode;
                     try {
-                      await selectedInstaller.setInstallerMode(
-                        mode == 'dhizuku'
-                            ? shizuku.InstallerMode.dhizuku
-                            : shizuku.InstallerMode.shizuku,
-                      );
-                      resCode = await selectedInstaller.checkPermission();
+                      resCode = await checkShizukuPluginPermission(pluginMode);
                     } on Exception {
                       if (!context.mounted) return;
                       showError(ObtainiumError(tr(binderNotFoundKey)));
                       return;
                     }
                     if (!context.mounted) return;
-                    final bool granted = mode == 'dhizuku'
-                        ? resCode == 'granted_owner'
-                        : (resCode == 'granted_adb' ||
-                              resCode == 'granted_root');
-                    if (granted) {
+                    if (isShizukuPluginPermissionGranted(pluginMode, resCode)) {
                       sp.installerMode = mode;
                     } else {
                       switch (resCode) {
