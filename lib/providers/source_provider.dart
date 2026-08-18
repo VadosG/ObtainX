@@ -96,6 +96,19 @@ const Set<String> validMalwareScanStatuses = {
   malwareScanStatusError,
 };
 
+/// Per-app companion to the global `enableVirusTotalScanning` setting: turning
+/// this off excludes one app from the pre-install VirusTotal scan. Same polarity
+/// and label as the global switch on purpose - on means "scan", so the two read
+/// identically wherever they appear.
+///
+/// Defaults to **true**, which every read MUST repeat as
+/// `getBool(enableVirusTotalScanKey, defaultValue: true)`. Apps saved before this
+/// key existed have no entry for it, and [TypedSettings.getBool]'s own default is
+/// false, so a bare `getBool(enableVirusTotalScanKey)` reads as "don't scan" and
+/// silently disables scanning for every pre-existing app. There is exactly one
+/// read site - AppsProvider.willScanApkWithVirusTotal - so keep it that way.
+const String enableVirusTotalScanKey = 'enableVirusTotalScan';
+
 /// Coerces a stored JSON value into a valid malware-scan status, or null.
 String? malwareScanStatusFromJsonValue(Object? value) {
   if (value is String && validMalwareScanStatuses.contains(value)) {
@@ -1136,6 +1149,17 @@ abstract class AppSource {
       GeneratedFormSwitch(
         'refreshBeforeDownload',
         label: tr('refreshBeforeDownload'),
+      ),
+    ],
+    [
+      // Same label as the global setting in Settings > Integrations,
+      // deliberately: this is that switch scoped to one app, not a separate
+      // opt-out with inverted meaning.
+      GeneratedFormSwitch(
+        enableVirusTotalScanKey,
+        label: tr('enableVirusTotalScanning'),
+        value: true,
+        labelTooltip: tr('perAppVirusTotalScanTooltip'),
       ),
     ],
   ];

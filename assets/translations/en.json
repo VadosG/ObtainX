@@ -335,6 +335,7 @@
     "stayOneVersionBehind": "Stay one version behind latest",
     "useFirstApkOfVersion": "Auto-select first of multiple APKs",
     "refreshBeforeDownload": "Refresh app details before download",
+    "perAppVirusTotalScanTooltip": "Scan this app's downloaded APKs with VirusTotal before installing them. Turn it off to exclude this app from scanning.\n\nThis only has an effect while \"Scan APKs with VirusTotal\" is enabled in Settings with a validated API key.",
     "tencentAppStore": "Tencent App Store",
     "coolApk": "CoolApk",
     "vivoAppStore": "vivo App Store (CN)",
@@ -770,6 +771,7 @@
     "cancelInstall": "Cancel install",
     "installAnyway": "Install anyway",
     "virusTotalViewReport": "View on VirusTotal",
+    "virusTotalRetryScan": "Retry scan",
     "malwareScanFlaggedSkippedTitle": "{} was not updated - VirusTotal flagged its APK",
     "malwareScanErrorSkippedTitle": "{} was not updated - VirusTotal scan failed",
     "malwareScanSkippedPluralTitle": {

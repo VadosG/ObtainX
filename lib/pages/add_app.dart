@@ -25,6 +25,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/providers/virustotal_provider.dart';
 import 'package:obtainium/store_source_icons.dart';
 import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
@@ -1581,6 +1582,18 @@ class AddAppPageState extends State<AddAppPage> {
         for (final GeneratedFormItem item in items.expand((row) => row)) {
           if (item is GeneratedFormSwitch && item.key == 'includePrereleases') {
             item.value = true;
+          }
+        }
+      }
+      // Mirrors AdditionalOptionsPage: the per-app VirusTotal switch stays visible
+      // but inert when scanning isn't usable (global toggle off or no validated
+      // key). Not clamped - see the comment there for why the chosen value must
+      // survive global scanning being toggled off and back on.
+      if (!virusTotalScanningAvailable(settingsProvider)) {
+        for (final GeneratedFormItem item in items.expand((row) => row)) {
+          if (item is GeneratedFormSwitch &&
+              item.key == enableVirusTotalScanKey) {
+            item.disabled = true;
           }
         }
       }
