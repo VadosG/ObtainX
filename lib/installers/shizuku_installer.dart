@@ -20,11 +20,10 @@ class ShizukuInstaller extends Installer {
   Future<bool> canInstallSilently(App app) async => true;
 
   @override
-  Future<bool> checkPermission() async =>
-      isShizukuPluginPermissionGranted(
-        InstallerMode.shizuku,
-        await checkShizukuPluginPermission(InstallerMode.shizuku),
-      );
+  Future<bool> checkPermission() async => isShizukuPluginPermissionGranted(
+    InstallerMode.shizuku,
+    await checkShizukuPluginPermission(InstallerMode.shizuku),
+  );
 
   @override
   Future<void> ensurePermission({ThemeData? toastTheme}) async {

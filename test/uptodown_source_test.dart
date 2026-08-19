@@ -15,26 +15,29 @@ void main() {
       expect(parseUptodownDate(null), isNull);
     });
 
-    test('sourceSpecificStandardizeURL normalizes subdomains to .en.uptodown.', () {
-      expect(
-        uptodown.sourceSpecificStandardizeURL(
-          'https://gamehub.br.uptodown.com/android',
-        ),
-        equals('https://gamehub.en.uptodown.com/android/download'),
-      );
-      expect(
-        uptodown.sourceSpecificStandardizeURL(
-          'https://vlc.es.uptodown.com/android/download',
-        ),
-        equals('https://vlc.en.uptodown.com/android/download'),
-      );
-      expect(
-        uptodown.sourceSpecificStandardizeURL(
-          'https://whatsapp-messenger.en.uptodown.com/android',
-        ),
-        equals('https://whatsapp-messenger.en.uptodown.com/android/download'),
-      );
-    });
+    test(
+      'sourceSpecificStandardizeURL normalizes subdomains to .en.uptodown.',
+      () {
+        expect(
+          uptodown.sourceSpecificStandardizeURL(
+            'https://gamehub.br.uptodown.com/android',
+          ),
+          equals('https://gamehub.en.uptodown.com/android/download'),
+        );
+        expect(
+          uptodown.sourceSpecificStandardizeURL(
+            'https://vlc.es.uptodown.com/android/download',
+          ),
+          equals('https://vlc.en.uptodown.com/android/download'),
+        );
+        expect(
+          uptodown.sourceSpecificStandardizeURL(
+            'https://whatsapp-messenger.en.uptodown.com/android',
+          ),
+          equals('https://whatsapp-messenger.en.uptodown.com/android/download'),
+        );
+      },
+    );
 
     test('parseUptodownTechnicalFields reads fields by content', () {
       // Cell order as served for a GameHub-like app, including the sha256 row
@@ -52,50 +55,56 @@ void main() {
       expect(fields.extension, equals('apk'));
     });
 
-    test('parseUptodownTechnicalFields handles the real full-page cell list', () {
-      // Verbatim non-empty `#technical-information td` texts served for VLC on
-      // 2026-08-12. `#technical-information` is a container of several tables
-      // (basic info, distribution model, system requirements, then the file
-      // details), so the real list is much longer than the file rows alone.
-      // The old fixed offsets pick 'APK' as the date and '45.77 MB' as the
-      // extension here, which is why fields are matched by content instead.
-      final fields = parseUptodownTechnicalFields([
-        'VideoLabs',
-        'Video',
-        '+3',
-        'English 46 more',
-        'Free',
-        'GPL 2.0',
-        '(More information)',
-        'Android',
-        'arm64-v8a',
-        'See 30 permissions',
-        '511fea1a22a7b62ebc01950c167c0406',
-        '14,949,927',
-        'Jul 1, 2026',
-        'APK',
-        '45.77 MB',
-        'c493c167de52724dbdd727fd6e20ec43d89200a847fb7b7d88da850faf336bcd',
-        'Matches the published version',
-        'org.videolan.vlc',
-      ]);
-      expect(fields.appId, equals('org.videolan.vlc'));
-      expect(fields.dateStr, equals('Jul 1, 2026'));
-      expect(fields.extension, equals('apk'));
-    });
+    test(
+      'parseUptodownTechnicalFields handles the real full-page cell list',
+      () {
+        // Verbatim non-empty `#technical-information td` texts served for VLC on
+        // 2026-08-12. `#technical-information` is a container of several tables
+        // (basic info, distribution model, system requirements, then the file
+        // details), so the real list is much longer than the file rows alone.
+        // The old fixed offsets pick 'APK' as the date and '45.77 MB' as the
+        // extension here, which is why fields are matched by content instead.
+        final fields = parseUptodownTechnicalFields([
+          'VideoLabs',
+          'Video',
+          '+3',
+          'English 46 more',
+          'Free',
+          'GPL 2.0',
+          '(More information)',
+          'Android',
+          'arm64-v8a',
+          'See 30 permissions',
+          '511fea1a22a7b62ebc01950c167c0406',
+          '14,949,927',
+          'Jul 1, 2026',
+          'APK',
+          '45.77 MB',
+          'c493c167de52724dbdd727fd6e20ec43d89200a847fb7b7d88da850faf336bcd',
+          'Matches the published version',
+          'org.videolan.vlc',
+        ]);
+        expect(fields.appId, equals('org.videolan.vlc'));
+        expect(fields.dateStr, equals('Jul 1, 2026'));
+        expect(fields.extension, equals('apk'));
+      },
+    );
 
-    test('parseUptodownTechnicalFields ignores versions and digests as ids', () {
-      final fields = parseUptodownTechnicalFields([
-        '1.2.3',
-        'September 4, 2025',
-        'XAPK',
-        '12.0 MB',
-        'org.videolan.vlc',
-      ]);
-      expect(fields.appId, equals('org.videolan.vlc'));
-      expect(fields.dateStr, equals('September 4, 2025'));
-      expect(fields.extension, equals('xapk'));
-    });
+    test(
+      'parseUptodownTechnicalFields ignores versions and digests as ids',
+      () {
+        final fields = parseUptodownTechnicalFields([
+          '1.2.3',
+          'September 4, 2025',
+          'XAPK',
+          '12.0 MB',
+          'org.videolan.vlc',
+        ]);
+        expect(fields.appId, equals('org.videolan.vlc'));
+        expect(fields.dateStr, equals('September 4, 2025'));
+        expect(fields.extension, equals('xapk'));
+      },
+    );
 
     test('uptodownDirectApkUrl expands paths and passes absolute URLs', () {
       expect(

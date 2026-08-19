@@ -1169,15 +1169,10 @@ class MainActivity : FlutterActivity() {
         } else {
             APK_MIME
         }
-        // XAPK/APKM/ZIP bundles: use ACTION_VIEW so targets that only handle "open file"
-        // (e.g. InstallerX from a file manager) receive the same intent shape.
-        val intentAction =
-            if (releaseFiles.size == 1 && primaryMime == "application/zip") {
-                Intent.ACTION_VIEW
-            } else {
-                Intent.ACTION_INSTALL_PACKAGE
-            }
-        val intent = Intent(intentAction).apply {
+        // Third-party installers commonly expose the same "open file" entry point used
+        // by file managers. Use ACTION_VIEW for every format so installers such as Thor
+        // parse APKs as well as XAPK/APKM/ZIP bundles.
+        val intent = Intent(Intent.ACTION_VIEW).apply {
             if (contentUris.size == 1) {
                 setDataAndType(contentUris[0], primaryMime)
             } else {

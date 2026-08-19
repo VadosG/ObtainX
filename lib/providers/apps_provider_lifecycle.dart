@@ -1078,7 +1078,7 @@ extension AppsProviderLifecycle on AppsProvider {
         return tr('unexpectedError');
       }
       final Uint8List bytes = await sourceFile.readAsBytes();
-      return applyUserAppIconPngBytes(appId, bytes);
+      return await applyUserAppIconPngBytes(appId, bytes);
     } catch (e) {
       unawaited(logs.add('setUserAppIconFromPngPath: $e'));
       return tr('unexpectedError');
