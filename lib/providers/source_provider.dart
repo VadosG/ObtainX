@@ -1442,6 +1442,20 @@ abstract class MassAppUrlSource {
 /// Delegates to [VersionService.regExValidator].
 String? regExValidator(String? value) => VersionService().regExValidator(value);
 
+/// The user-supplied "App ID - Custom" value, or null when none was given.
+///
+/// Empty means "not supplied", not "the id is the empty string".
+/// [GeneratedFormTextField] defaults to `''`, and the Add-app page assigns the
+/// whole form value map to `additionalSettings` on every change, so an untouched
+/// box reaches callers as `''` as soon as the user touches any other option.
+/// Treating that as explicit made the app id blank.
+/// [IzzyOnDroid.tryInferringAppId] guards its own read the same way.
+String? explicitAppIdFromSettings(Map<String, dynamic> additionalSettings) {
+  final String? raw = additionalSettings['appId'] as String?;
+  final String? trimmed = raw?.trim();
+  return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+}
+
 /// Returns true if the app's ID is a temporary placeholder rather than a real
 /// package name. Matches [generateTempID]'s sha256-hex prefix and legacy numeric
 /// IDs; real package names contain a dot and never match.
@@ -1677,7 +1691,7 @@ class SourceProvider {
     bool inferAppIdIfOptional,
   ) async {
     if (currentApp?.id != null) return currentApp!.id;
-    final explicitId = additionalSettings['appId'] as String?;
+    final String? explicitId = explicitAppIdFromSettings(additionalSettings);
     if (explicitId != null) return explicitId;
     if (!trackOnly &&
         (!source.appIdInferIsOptional ||

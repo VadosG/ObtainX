@@ -626,8 +626,18 @@ class APKMirror extends AppSource {
   /// from a sidebar/related-apps widget — Signal's page yields
   /// `com.google.android.youtube`.
   ///
-  /// The fix is not a better regex: APKMirror's `app_exists` API (already used
-  /// by `bulk_import_service.dart`) returns the exact package name in `pname`.
+  /// The fix is not a better regex, but it is not the `app_exists` API either:
+  /// that endpoint is a *reverse* lookup (you post `pnames` and it returns app
+  /// links), so it cannot answer "which package is this URL?". Two forward
+  /// routes were verified against live pages on 2026-08-18:
+  ///  * the listing page's `og:image` filename carries `_<pname>` for newer
+  ///    uploads — exact when present (chrome/whatsapp/spotify/signal all
+  ///    matched the API's `pname`), but absent on older icons, which are just
+  ///    `<hash>.png` (firefox, termux, vlc);
+  ///  * authoritative: walk to `download.php` and read the **302 `Location`**
+  ///    header without fetching a body. The R2 filename encodes package,
+  ///    version and version code, e.g.
+  ///    `com.android.chrome_151.0.7922.139-792213933_25lang_2feat_<md5>_apkmirror.com.apkm`.
   @override
   Future<String?> tryInferringAppId(
     String standardUrl, {

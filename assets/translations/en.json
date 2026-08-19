@@ -246,6 +246,7 @@
     "requiresCredentialsInSettings": "{} needs additional credentials (in Settings)",
     "checkOnStart": "Check for updates on startup",
     "tryInferAppIdFromCode": "Try inferring app ID from source code",
+    "inferAppIdOverriddenByCustom": "Not used while a custom app ID is set below — the custom value takes priority.",
     "removeOnExternalUninstall": "Automatically remove externally uninstalled apps",
     "openAppInfoInAppManager": "Open app info in App Manager",
     "appManagerNotInstalledSnackbar": "\"App Manager\" needs to be installed before this can be enabled",

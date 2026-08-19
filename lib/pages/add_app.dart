@@ -38,6 +38,11 @@ import 'package:url_launcher/url_launcher_string.dart';
 const double _appVaultFabBottomGap = 8.0;
 const double _fabHorizontalMargin = 16.0;
 const double _fabMinimumSafeBottomPadding = 16.0;
+
+/// Height of the extended save FAB. It floats over the scroll view instead of
+/// taking layout space, so the scrolled content has to reserve this itself or
+/// the last card ends up underneath it.
+const double _bottomActionFabHeight = 56.0;
 InlineSpan _tooltipMessageWithBoldMarkdown(String message) {
   final List<String> messageParts = message.split('**');
   return TextSpan(
@@ -133,6 +138,17 @@ class AddAppPageState extends State<AddAppPage> {
   Map<String, dynamic> additionalSettings = {};
   bool additionalSettingsValid = true;
   bool inferAppIdIfOptional = true;
+
+  /// Whether the "App ID - Custom" box currently holds a value, debounced.
+  ///
+  /// Drives the disabled state of the inference switch: a custom id wins
+  /// outright in [SourceProvider] (it returns before inference is even
+  /// attempted), so leaving the switch live would suggest a choice the user does
+  /// not have. Debounced rather than read straight from the form value so a
+  /// half-typed id does not flip the switch's appearance on every keystroke.
+  bool _customAppIdEntered = false;
+  Timer? _customAppIdDebounce;
+  static const Duration _customAppIdDebounceDelay = Duration(milliseconds: 400);
   List<String> pickedCategories = [];
   SourceProvider sourceProvider = SourceProvider();
   final GlobalKey _urlFieldKey = GlobalKey();
@@ -356,12 +372,32 @@ class AddAppPageState extends State<AddAppPage> {
 
   @override
   void dispose() {
+    _customAppIdDebounce?.cancel();
     _urlFieldController.dispose();
     _urlFieldFocusNode.dispose();
     _searchSomeSourcesController.dispose();
     _searchResultFilterController.dispose();
     _searchSomeSourcesFocusNode.dispose();
     super.dispose();
+  }
+
+  /// Flips [_customAppIdEntered] once the user has paused typing.
+  ///
+  /// Cancels a pending flip when the value returns to its current meaning, so
+  /// typing and then clearing the box again settles without a visible bounce.
+  void _scheduleCustomAppIdCheck(dynamic rawAppId) {
+    final bool entered = rawAppId is String && rawAppId.trim().isNotEmpty;
+    if (entered == _customAppIdEntered) {
+      _customAppIdDebounce?.cancel();
+      return;
+    }
+    _customAppIdDebounce?.cancel();
+    _customAppIdDebounce = Timer(_customAppIdDebounceDelay, () {
+      if (!mounted || entered == _customAppIdEntered) return;
+      setState(() {
+        _customAppIdEntered = entered;
+      });
+    });
   }
 
   /// Lazily initialise the store selection for the active search workflow.
@@ -709,10 +745,13 @@ class AddAppPageState extends State<AddAppPage> {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final HomePageState? homeState = context
         .findAncestorStateOfType<HomePageState>();
-    final double coveredBottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    final double bottomChromeClearance = settingsProvider.progressiveBlurEnabled
-        ? coveredBottomInset
-        : 0.0;
+    // Not conditional on progressiveBlurEnabled: that setting only decides
+    // whether the navigation pill is drawn with a BackdropFilter, not where it
+    // sits, and the system navigation bar is there either way. Gating on it left
+    // the last row of content under both whenever the blur was off.
+    final double bottomChromeClearance = MediaQuery.viewPaddingOf(
+      context,
+    ).bottom;
 
     final bool useTwoPaneLayout =
         MediaQuery.sizeOf(context).width >= kLargeScreenWidthBreakpoint &&
@@ -1199,10 +1238,13 @@ class AddAppPageState extends State<AddAppPage> {
     // the blurred bottom nav extends underneath it. Place this FAB from the
     // actual screen bottom chrome instead of letting the default endFloat
     // location stack its own 16 dp margin on top of that inherited padding.
-    final double coveredBottomInset = MediaQuery.paddingOf(context).bottom;
-    final double bottomChromeClearance = settingsProvider.progressiveBlurEnabled
-        ? coveredBottomInset
-        : 0.0;
+    // viewPadding, not padding: padding collapses to zero as the keyboard's
+    // viewInsets grow, which would drop the FAB onto the navigation bar mid
+    // animation. See the note in _buildLauncher on why the blur setting has no
+    // say in this.
+    final double bottomChromeClearance = MediaQuery.viewPaddingOf(
+      context,
+    ).bottom;
     final double appVaultFabBottomPadding =
         (bottomChromeClearance > _fabMinimumSafeBottomPadding
             ? bottomChromeClearance
@@ -1565,6 +1607,85 @@ class AddAppPageState extends State<AddAppPage> {
           }
         }
       }
+      // App-id controls belong to the picked source, so they render in the same
+      // card as its other options rather than in stacked cards of their own.
+      // They live here, in an Add-app-local builder, and NOT in
+      // AppSource.combinedAppSpecificSettingFormItems: AdditionalOptionsPage
+      // renders that same getter to edit an existing app, where inference can
+      // never run (SourceProvider._resolveAppId returns the known id at once),
+      // so they would show up there as dead controls.
+      final bool showInferToggle =
+          pickedSource!.appIdInferIsOptional && !pickedSource!.enforceTrackOnly;
+      final bool showAppIdField =
+          pickedSource!.appIdInferIsOptional || pickedSource!.enforceTrackOnly;
+      final List<List<GeneratedFormItem>> appIdRows = [
+        // Omitted where it would be inert: inference is skipped for track-only
+        // apps, so for e.g. APKMirror this switch used to sit there, on by
+        // default, doing nothing — and labelled 'from source code' for a store
+        // that has none. The manual field below stays, as the only way in.
+        if (showInferToggle)
+          [
+            GeneratedFormSwitch(
+              'inferAppIdIfOptional',
+              label: tr('tryInferAppIdFromCode'),
+              value: inferAppIdIfOptional,
+              // A custom id short-circuits SourceProvider._resolveAppId before
+              // inference runs, so the switch cannot affect the outcome while
+              // the box below has a value. Say so instead of leaving a live
+              // control that does nothing.
+              disabled: _customAppIdEntered,
+              labelTooltip: _customAppIdEntered
+                  ? tr('inferAppIdOverriddenByCustom')
+                  : null,
+            ),
+          ],
+        if (showAppIdField)
+          [
+            GeneratedFormTextField(
+              'appId',
+              label: '${tr('appId')} - ${tr('custom')}',
+              required: false,
+              additionalValidators: [
+                (value) {
+                  if (value == null || value.isEmpty) {
+                    return null;
+                  }
+                  final isValid = RegExp(
+                    r'^([A-Za-z]{1}[A-Za-z\d_]*\.)+[A-Za-z][A-Za-z\d_]*$',
+                  ).hasMatch(value);
+                  if (!isValid) {
+                    return tr('invalidInput');
+                  }
+                  return null;
+                },
+              ],
+            ),
+          ],
+      ];
+      // The source's own options arrive first and headerless, so they join this
+      // section; the first generic header (TRACKING BEHAVIOR) opens the next
+      // card. Only add the header when something actually follows it, otherwise
+      // a source with neither app-id controls nor its own options would title an
+      // empty card. (The pruning in combinedAppSpecificSettingFormItems runs
+      // before this injection, so it cannot cover this case.)
+      final bool leadsWithSourceOwnedRows =
+          items.isNotEmpty &&
+          !(items.first.length == 1 &&
+              items.first.first is GeneratedFormSectionHeader);
+      if (appIdRows.isNotEmpty || leadsWithSourceOwnedRows) {
+        items.insertAll(0, [
+          [
+            GeneratedFormSectionHeader(
+              '__formSectionSource',
+              label: tr(
+                'additionalOptsFor',
+                args: [pickedSource?.name ?? tr('source')],
+              ),
+            ),
+          ],
+          ...appIdRows,
+        ]);
+      }
       return attachRegexAssistToItems(
         items,
         rawLatestVersionFromSource: null,
@@ -1777,50 +1898,9 @@ class AddAppPageState extends State<AddAppPage> {
     );
 
     Widget getAdditionalOptsCol() {
-      final ColorScheme colorScheme = Theme.of(context).colorScheme;
-      final TextStyle? sectionIntroStyle = Theme.of(context)
-          .textTheme
-          .titleSmall
-          ?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.primary);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (pickedSource != null && pickedSource!.appIdInferIsOptional)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: GeneratedForm(
-                key: const Key('inferAppIdIfOptional'),
-                outlinedInputFields: true,
-                prominentSectionHeaders: true,
-                wrapFormSectionsInCards: true,
-                items: [
-                  [
-                    GeneratedFormSwitch(
-                      'inferAppIdIfOptional',
-                      label: tr('tryInferAppIdFromCode'),
-                      value: inferAppIdIfOptional,
-                    ),
-                  ],
-                ],
-                onValueChanges: (values, valid, isBuilding) {
-                  if (!isBuilding) {
-                    setState(() {
-                      inferAppIdIfOptional = values['inferAppIdIfOptional'];
-                    });
-                  }
-                },
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              tr(
-                'additionalOptsFor',
-                args: [pickedSource?.name ?? tr('source')],
-              ),
-              style: sectionIntroStyle,
-            ),
-          ),
           GeneratedForm(
             key: Key(
               '${pickedSource.runtimeType.toString()}-${pickedSource?.hostChanged.toString()}-${pickedSource?.hostIdenticalDespiteAnyChange.toString()}',
@@ -1832,7 +1912,18 @@ class AddAppPageState extends State<AddAppPage> {
             onValueChanges: (values, valid, isBuilding) {
               if (!isBuilding) {
                 setState(() {
-                  additionalSettings = values;
+                  // 'inferAppIdIfOptional' is an add-time-only choice passed
+                  // straight to SourceProvider.getApp, not a per-app setting —
+                  // take it out before the rest becomes additionalSettings so it
+                  // is never written to the app's stored JSON.
+                  final Map<String, dynamic> settings =
+                      Map<String, dynamic>.from(values);
+                  if (settings.containsKey('inferAppIdIfOptional')) {
+                    inferAppIdIfOptional =
+                        settings.remove('inferAppIdIfOptional') == true;
+                  }
+                  _scheduleCustomAppIdCheck(settings['appId']);
+                  additionalSettings = settings;
                   additionalSettingsValid = valid;
                 });
               }
@@ -1865,48 +1956,6 @@ class AddAppPageState extends State<AddAppPage> {
               ),
             ),
           ),
-          if (pickedSource != null && pickedSource!.enforceTrackOnly)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: GeneratedForm(
-                key: Key(
-                  '${pickedSource.runtimeType.toString()}-${pickedSource?.hostChanged.toString()}-${pickedSource?.hostIdenticalDespiteAnyChange.toString()}-appId',
-                ),
-                outlinedInputFields: true,
-                prominentSectionHeaders: true,
-                wrapFormSectionsInCards: true,
-                items: [
-                  [
-                    GeneratedFormTextField(
-                      'appId',
-                      label: '${tr('appId')} - ${tr('custom')}',
-                      required: false,
-                      additionalValidators: [
-                        (value) {
-                          if (value == null || value.isEmpty) {
-                            return null;
-                          }
-                          final isValid = RegExp(
-                            r'^([A-Za-z]{1}[A-Za-z\d_]*\.)+[A-Za-z][A-Za-z\d_]*$',
-                          ).hasMatch(value);
-                          if (!isValid) {
-                            return tr('invalidInput');
-                          }
-                          return null;
-                        },
-                      ],
-                    ),
-                  ],
-                ],
-                onValueChanges: (values, valid, isBuilding) {
-                  if (!isBuilding) {
-                    setState(() {
-                      additionalSettings['appId'] = values['appId'];
-                    });
-                  }
-                },
-              ),
-            ),
         ],
       );
     }
@@ -2470,11 +2519,143 @@ class AddAppPageState extends State<AddAppPage> {
       );
     }
 
+    final Widget flowScrollView = CustomScrollView(
+      scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+      key: PageStorageKey<String>(
+        'add-app-flow-${widget._initialMode.name}-'
+        '${widget._searchAddsMultipleApps}-scroll',
+      ),
+      slivers: <Widget>[
+        if (!widget._embeddedDetail)
+          CustomAppBar(
+            title: isInlineLauncherFlow
+                ? tr('addApp')
+                : _mode == _AddMode.byUrl
+                ? tr('addAppUrl')
+                : tr(
+                    widget._searchAddsMultipleApps
+                        ? 'searchSourceAddApps'
+                        : 'searchSourcesAddApp',
+                  ),
+            searchWidget: isInlineLauncherFlow ? null : const SizedBox.shrink(),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () {
+                unawaited(_requestFlowPop());
+              },
+            ),
+            matchGradientBackground: settingsProvider.useGradientBackground,
+          ),
+        SliverSafeArea(
+          top: widget._embeddedDetail,
+          bottom: false,
+          sliver: SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                isInlineLauncherFlow ? 16 : 12,
+                8,
+                isInlineLauncherFlow ? 16 : 12,
+                16,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isInlineLauncherFlow ? 720 : 840,
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    layoutBuilder: (currentChild, previousChildren) {
+                      return Stack(
+                        alignment: Alignment.topCenter,
+                        children: <Widget>[...previousChildren, ?currentChild],
+                      );
+                    },
+                    child: KeyedSubtree(
+                      key: ValueKey(_mode),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_mode == _AddMode.byUrl) ...[
+                            const SizedBox(height: 8),
+                            _buildAppSourceUrlField(
+                              context: context,
+                              submitDisabled: urlAddDisabled(),
+                              matchLauncherButton: isInlineLauncherFlow,
+                              onSubmit: () {
+                                unawaited(addApp());
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            if (pickedSource != null)
+                              getHTMLSourceOverrideDropdown(),
+                            if (pickedSource != null)
+                              FutureBuilder(
+                                builder: (ctx, val) {
+                                  return val.data != null &&
+                                          val.data!.isNotEmpty
+                                      ? Text(
+                                          val.data!,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        )
+                                      : const SizedBox();
+                                },
+                                future: pickedSource?.getSourceNote(),
+                              ),
+                            if (pickedSource != null) getAdditionalOptsCol(),
+                          ],
+                          if (_mode == _AddMode.search) ...[
+                            const SizedBox(height: 8),
+                            getSearchBarRow(),
+                            const SizedBox(height: 12),
+                            Text(
+                              widget._searchAddsMultipleApps
+                                  ? tr(
+                                      'selectX',
+                                      args: [tr('source').toLowerCase()],
+                                    )
+                                  : tr('storesToSearch'),
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                            const SizedBox(height: 6),
+                            getSearchStoreChips(),
+                            getSearchResultsList(),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Reserved unconditionally, and sized for the save FAB as well as
+        // the navigation bar: the FAB is an overlay in the Stack below, so
+        // nothing else keeps the last card out from under it. Reserved
+        // even in the modes that show no FAB, so switching modes or
+        // starting to type doesn't shift the content that is already on
+        // screen.
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: appVaultFabBottomPadding + _bottomActionFabHeight,
+          ),
+        ),
+      ],
+    );
+
     final Widget flowScaffold = Scaffold(
       // Don't let the keyboard resize the body (see the apps-list Scaffold): the
       // per-frame resize repaint forces the app bar's progressive-blur
       // BackdropFilter to re-rasterize every frame and stutters the keyboard
-      // slide. The URL / search field is at the top, so it stays visible.
+      // slide. Fields still get out from under the keyboard — the scroll view
+      // alone takes the inset, in the Builder below.
       resizeToAvoidBottomInset: false,
       backgroundColor:
           widget._embeddedDetail && settingsProvider.useGradientBackground
@@ -2484,137 +2665,27 @@ class AddAppPageState extends State<AddAppPage> {
         fit: StackFit.expand,
         children: [
           if (settingsProvider.useGradientBackground) buildGradientBackground(),
-          CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
-            key: PageStorageKey<String>(
-              'add-app-flow-${widget._initialMode.name}-'
-              '${widget._searchAddsMultipleApps}-scroll',
-            ),
-            slivers: <Widget>[
-              if (!widget._embeddedDetail)
-                CustomAppBar(
-                  title: isInlineLauncherFlow
-                      ? tr('addApp')
-                      : _mode == _AddMode.byUrl
-                      ? tr('addAppUrl')
-                      : tr(
-                          widget._searchAddsMultipleApps
-                              ? 'searchSourceAddApps'
-                              : 'searchSourcesAddApp',
-                        ),
-                  searchWidget: isInlineLauncherFlow
-                      ? null
-                      : const SizedBox.shrink(),
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    onPressed: () {
-                      unawaited(_requestFlowPop());
-                    },
-                  ),
-                  matchGradientBackground:
-                      settingsProvider.useGradientBackground,
-                ),
-              SliverSafeArea(
-                top: widget._embeddedDetail,
-                bottom: false,
-                sliver: SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      isInlineLauncherFlow ? 16 : 12,
-                      8,
-                      isInlineLauncherFlow ? 16 : 12,
-                      16,
-                    ),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: isInlineLauncherFlow ? 720 : 840,
-                        ),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          layoutBuilder: (currentChild, previousChildren) {
-                            return Stack(
-                              alignment: Alignment.topCenter,
-                              children: <Widget>[
-                                ...previousChildren,
-                                ?currentChild,
-                              ],
-                            );
-                          },
-                          child: KeyedSubtree(
-                            key: ValueKey(_mode),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (_mode == _AddMode.byUrl) ...[
-                                  const SizedBox(height: 8),
-                                  _buildAppSourceUrlField(
-                                    context: context,
-                                    submitDisabled: urlAddDisabled(),
-                                    matchLauncherButton: isInlineLauncherFlow,
-                                    onSubmit: () {
-                                      unawaited(addApp());
-                                    },
-                                  ),
-                                  const SizedBox(height: 16),
-                                  if (pickedSource != null)
-                                    getHTMLSourceOverrideDropdown(),
-                                  if (pickedSource != null)
-                                    FutureBuilder(
-                                      builder: (ctx, val) {
-                                        return val.data != null &&
-                                                val.data!.isNotEmpty
-                                            ? Text(
-                                                val.data!,
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall,
-                                              )
-                                            : const SizedBox();
-                                      },
-                                      future: pickedSource?.getSourceNote(),
-                                    ),
-                                  if (pickedSource != null)
-                                    getAdditionalOptsCol(),
-                                ],
-                                if (_mode == _AddMode.search) ...[
-                                  const SizedBox(height: 8),
-                                  getSearchBarRow(),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    widget._searchAddsMultipleApps
-                                        ? tr(
-                                            'selectX',
-                                            args: [tr('source').toLowerCase()],
-                                          )
-                                        : tr('storesToSearch'),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelMedium
-                                        ?.copyWith(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  getSearchStoreChips(),
-                                  getSearchResultsList(),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+          // The Scaffold deliberately doesn't resize for the keyboard (see
+          // above), but the *scroll viewport* has to, otherwise a field tapped
+          // further down the form never scrolls into view: EditableText asks its
+          // enclosing viewport to reveal the caret, and a viewport that still
+          // extends behind the keyboard reports the field as already visible, so
+          // nothing moves. Padding only the scroll view keeps the app bar's
+          // blurred rect and the FAB overlay out of the per-frame layout, which
+          // is what the Scaffold-level opt-out was protecting.
+          //
+          // Scoped to a Builder so the MediaQuery.viewInsets dependency lands
+          // here rather than on this page's own build, which would rebuild the
+          // whole (long, expensive) add-app form on every keyboard animation
+          // frame. flowScrollView is the same widget instance each time, so only
+          // the viewport relayouts.
+          Builder(
+            builder: (BuildContext context) => Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(context).bottom,
               ),
-              if (settingsProvider.progressiveBlurEnabled)
-                SliverToBoxAdapter(
-                  child: SizedBox(height: bottomChromeClearance),
-                ),
-            ],
+              child: flowScrollView,
+            ),
           ),
           buildBottomActionFabOverlay(),
         ],

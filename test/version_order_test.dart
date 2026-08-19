@@ -18,6 +18,7 @@ import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/app_sources/codeberg.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
@@ -2231,6 +2232,98 @@ This app description should not be included.
       )?.areEqual,
       true,
     );
+  });
+
+  // Codeberg reuses GitHub's option list, but attestations are GitHub-only:
+  // AppsProvider.verifyGitHubAttestation returns early on `source is! GitHub`,
+  // and the Add-app sanitiser is gated on `pickedSource is GitHub`, so the
+  // dropdown was both inert and unsanitised there.
+  test('Codeberg drops the GitHub-only build verification option', () {
+    final Set<String> codebergKeys = Codeberg()
+        .additionalSourceAppSpecificSettingFormItems
+        .expand((row) => row)
+        .map((item) => item.key)
+        .toSet();
+    final Set<String> githubKeys = GitHub()
+        .additionalSourceAppSpecificSettingFormItems
+        .expand((row) => row)
+        .map((item) => item.key)
+        .toSet();
+
+    expect(codebergKeys, isNot(contains(GitHub.buildVerificationModeKey)));
+    expect(githubKeys, contains(GitHub.buildVerificationModeKey));
+    // Everything else stays: Forgejo's release payloads carry tag_name, name,
+    // body, prerelease and published_at, and it serves /releases/latest.
+    expect(
+      codebergKeys,
+      githubKeys.difference({GitHub.buildVerificationModeKey}),
+    );
+    // No row is left empty by the filtering.
+    for (final row in Codeberg().additionalSourceAppSpecificSettingFormItems) {
+      expect(row, isNotEmpty);
+    }
+  });
+
+  // Forgejo/Gitea assets expose only `created_at`, so reading `updated_at`
+  // alone made "use latest asset upload as release date" a no-op on Codeberg.
+  //
+  // The input is deliberately in the WRONG order (newest first) so the sort has
+  // to actually move something: with no usable dates every comparison returns 0
+  // and the stable sort leaves the input untouched, which is how a first version
+  // of this test passed against the unfixed code.
+  test('asset-date sorting reads Forgejo created_at as well as updated_at', () {
+    List<dynamic> newestFirst(String dateKey) => <dynamic>[
+      <String, dynamic>{
+        'tag_name': 'newer',
+        'assets': [
+          {'name': 'b.apk', dateKey: '2026-06-01T00:00:00Z'},
+        ],
+      },
+      <String, dynamic>{
+        'tag_name': 'older',
+        'assets': [
+          {'name': 'a.apk', dateKey: '2026-01-01T00:00:00Z'},
+        ],
+      },
+    ];
+
+    // Sorting is ascending, so a working asset date puts 'older' first.
+    final gitHubShaped = newestFirst('updated_at');
+    GitHub().sortGitHubReleases(gitHubShaped, 'date', true);
+    expect(gitHubShaped.map((r) => r['tag_name']).toList(), <String>[
+      'older',
+      'newer',
+    ]);
+
+    final forgejoShaped = newestFirst('created_at');
+    GitHub().sortGitHubReleases(forgejoShaped, 'date', true);
+    expect(forgejoShaped.map((r) => r['tag_name']).toList(), <String>[
+      'older',
+      'newer',
+    ]);
+
+    // Guard the guard: with neither timestamp there is nothing to sort by, so
+    // the original order must survive. If this ever starts reordering, the two
+    // assertions above stopped proving anything.
+    final undated = <dynamic>[
+      <String, dynamic>{
+        'tag_name': 'newer',
+        'assets': [
+          {'name': 'b.apk'},
+        ],
+      },
+      <String, dynamic>{
+        'tag_name': 'older',
+        'assets': [
+          {'name': 'a.apk'},
+        ],
+      },
+    ];
+    GitHub().sortGitHubReleases(undated, 'date', true);
+    expect(undated.map((r) => r['tag_name']).toList(), <String>[
+      'newer',
+      'older',
+    ]);
   });
 
   test('GitHub smart-name release sorting ignores version case', () {
