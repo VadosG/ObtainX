@@ -2211,4 +2211,118 @@ This app description should not be included.
       'v2.9.9-PREVIEW-251',
     ]);
   });
+
+  // An always-track-only source (APKMirror, RockMods) resolves a real package
+  // id, so absence from the device is a reliable uninstall signal. Before the
+  // fix, exempting every track-only app from step 1 pinned these to "installed
+  // <old version>" permanently — pull-to-refresh could not clear it.
+  test('track-only app with a real package id clears installed version '
+      'once uninstalled', () {
+    final appsProvider = AppsProvider(isBg: true);
+    final app = App(
+      id: 'com.example.trackedapp',
+      url: 'https://www.apkmirror.com/apk/vendor/tracked-app',
+      author: 'vendor',
+      name: 'Tracked App',
+      installedVersion: '1.2.3',
+      latestVersion: '1.2.4',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: {
+        'trackOnly': true,
+        'trackOnlyTemporaryPackageId': false,
+        'trackOnlyUndeterminedInstalledVersion': false,
+        'versionDetection': 'auto',
+      },
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+      app,
+      null,
+    );
+
+    expect(correctedApp, isNotNull);
+    expect(correctedApp!.installedVersion, isNull);
+    // Determined ("not installed"), so the app page's fix-the-package-id error
+    // card must stay hidden.
+    expect(
+      correctedApp.additionalSettings['trackOnlyUndeterminedInstalledVersion'],
+      false,
+    );
+  });
+
+  // A temporary (sha-prefix) package id can never match an installed package,
+  // so an absent lookup says nothing and the recorded version must survive.
+  test('track-only app with a temporary package id keeps its installed '
+      'version when absent from the device', () {
+    final appsProvider = AppsProvider(isBg: true);
+    final app = App(
+      id: 'a1b2c3d4e5f6',
+      url: 'https://www.apkmirror.com/apk/vendor/temp-id-app',
+      author: 'vendor',
+      name: 'Temp Id App',
+      installedVersion: '1.2.3',
+      latestVersion: '1.2.3',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: {
+        'trackOnly': true,
+        'trackOnlyTemporaryPackageId': true,
+        'trackOnlyUndeterminedInstalledVersion': true,
+        'versionDetection': 'auto',
+      },
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+      app,
+      null,
+    );
+
+    expect(correctedApp?.installedVersion ?? app.installedVersion, '1.2.3');
+  });
+
+  // The opposite direction was always trusted for real-id track-only apps;
+  // assert it still is, so the two directions stay symmetric.
+  test('track-only app with a real package id adopts the device version '
+      'once installed', () {
+    final appsProvider = AppsProvider(isBg: true);
+    final app = App(
+      id: 'com.example.trackedapp',
+      url: 'https://www.apkmirror.com/apk/vendor/tracked-app',
+      author: 'vendor',
+      name: 'Tracked App',
+      installedVersion: null,
+      latestVersion: '1.2.4',
+      apkUrls: const <MapEntry<String, String>>[],
+      preferredApkIndex: 0,
+      additionalSettings: {
+        'trackOnly': true,
+        'trackOnlyTemporaryPackageId': false,
+        'trackOnlyUndeterminedInstalledVersion': true,
+        'versionDetection': 'auto',
+      },
+      lastUpdateCheck: DateTime.now(),
+      pinned: false,
+    );
+
+    final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+      app,
+      const FakePackageInfo(
+        packageName: 'com.example.trackedapp',
+        versionName: '1.2.3',
+        versionCode: 123,
+      ),
+    );
+
+    expect(correctedApp, isNotNull);
+    expect(correctedApp!.installedVersion, '1.2.3');
+    expect(
+      correctedApp.additionalSettings['trackOnlyUndeterminedInstalledVersion'],
+      false,
+    );
+  });
 }

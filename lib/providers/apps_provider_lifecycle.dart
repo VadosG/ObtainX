@@ -218,8 +218,34 @@ extension AppsProviderLifecycle on AppsProvider {
       modded = true;
     }
     // 1. Compare reported vs. real installed versions where one is null.
-    if (installedInfo == null && app.installedVersion != null && !trackOnly) {
-      app = app.copyWith(installedVersion: null);
+    // A track-only app is exempt from "absent from the device means not
+    // installed" ONLY while its package id is a temporary placeholder: there
+    // getInstalledInfo can never match anything, so clearing would be wrong.
+    // Once the id is a real package name the device lookup is authoritative
+    // (the app holds QUERY_ALL_PACKAGES), and the else-branch below already
+    // trusts it in the opposite direction — it adopts the device's version the
+    // moment the package appears. Exempting every track-only app instead (fork
+    // main's rule) strands sources that are always track-only (APKMirror,
+    // RockMods) on "installed <old version>" forever once the user uninstalls:
+    // nothing else ever nulls the stored version, so neither a restart nor
+    // pull-to-refresh can clear it, and the app keeps counting as installed.
+    final bool trackOnlyPackageIdIsUnverifiable =
+        trackOnly &&
+        (isTempId(app) ||
+            app.additionalSettings['trackOnlyTemporaryPackageId'] == true);
+    if (installedInfo == null &&
+        app.installedVersion != null &&
+        !trackOnlyPackageIdIsUnverifiable) {
+      final newSettings = Map<String, dynamic>.from(app.additionalSettings);
+      if (trackOnly) {
+        // The install state is now *determined* (not installed), so don't let
+        // the app page resurface its "is your package id wrong?" error card.
+        newSettings['trackOnlyUndeterminedInstalledVersion'] = false;
+      }
+      app = app.copyWith(
+        installedVersion: null,
+        additionalSettings: newSettings,
+      );
       modded = true;
     } else if (realInstalledVersion != null && app.installedVersion == null) {
       // With detection disabled (non-standard), the device manifest version
@@ -585,6 +611,10 @@ extension AppsProviderLifecycle on AppsProvider {
                 );
                 final String sourceType = src.sourceIdentifier;
                 final PackageInfo? installedInfo = installedAppsMap[app.id];
+                // Sampled before the reconcile: "externally uninstalled" is the
+                // *transition* from a recorded version to none, and only step 1
+                // of the reconcile can make it.
+                final bool hadInstalledVersion = app.installedVersion != null;
                 final App? correctedApp =
                     getCorrectedInstallStatusAppIfPossible(app, installedInfo);
                 if (correctedApp != null) {
@@ -593,10 +623,16 @@ extension AppsProviderLifecycle on AppsProvider {
                   correctedInstallStatusIds.add(correctedApp.id);
                   // Absence from the device is the signal for "externally
                   // uninstalled" — not a null installedVersion, which is also
-                  // the state left behind by an explicit install status reset.
-                  // Keying off installedVersion alone would let
-                  // removeOnExternalUninstall delete a still-installed app.
-                  if (correctedApp.installedVersion == null &&
+                  // the state left behind by an explicit install status reset,
+                  // by an app added while it was not installed, and by a
+                  // track-only app whose package id was never resolved. Keying
+                  // off installedVersion alone would let
+                  // removeOnExternalUninstall delete a still-installed app, and
+                  // keying off it without [hadInstalledVersion] would delete
+                  // apps that were simply never installed the moment any
+                  // unrelated correction fired.
+                  if (hadInstalledVersion &&
+                      correctedApp.installedVersion == null &&
                       installedInfo == null) {
                     removedAppIds.add(correctedApp.id);
                   }
