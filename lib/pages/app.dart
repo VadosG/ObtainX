@@ -1037,9 +1037,9 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
   }
 
   Future<void> _pickEditIcon(AppsProvider appsProvider) async {
-    final FilePickerResult? result;
+    final PlatformFile? picked;
     try {
-      result = await FilePicker.pickFiles(
+      picked = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: const ['png'],
       );
@@ -1053,8 +1053,7 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
       return;
     }
     if (!mounted) return;
-    if (result == null || result.files.isEmpty) return;
-    final PlatformFile picked = result.files.single;
+    if (picked == null) return;
     final Uint8List? bytes = await _readPickedFileBytes(picked);
     if (bytes == null) return;
     if (!appsProvider.validateUserAppIconPngBytes(bytes)) {

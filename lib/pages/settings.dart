@@ -2057,12 +2057,12 @@ class _CustomFontTile extends StatelessWidget {
       );
       if (proceed != true) return;
 
-      final FilePickerResult? result = await FilePicker.pickFiles(
+      final PlatformFile? picked = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['ttf', 'otf'],
       );
-      if (result == null || result.files.single.path == null) return;
-      final String pickedPath = result.files.single.path!;
+      if (picked == null || picked.path == null) return;
+      final String pickedPath = picked.path!;
 
       final Directory appDocDir = await getApplicationDocumentsDirectory();
       final Directory fontsDir = Directory('${appDocDir.path}/fonts');

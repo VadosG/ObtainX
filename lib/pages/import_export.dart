@@ -192,19 +192,19 @@ class _ImportExportPageState extends State<ImportExportPage> {
         return selectedBackupData;
       }
 
-      final FilePickerResult? result;
+      final PlatformFile? picked;
       try {
-        result = await FilePicker.pickFiles(
+        picked = await FilePicker.pickFile(
           type: FileType.custom,
           allowedExtensions: ['json'],
         );
       } catch (e) {
         throw ObtainiumError(tr('noFilePickerAvailable'));
       }
-      if (result == null) {
+      if (picked == null || picked.path == null) {
         return null;
       }
-      return File(result.files.single.path!).readAsString();
+      return File(picked.path!).readAsString();
     }
 
     Future<void> runObtainiumImport() async {
