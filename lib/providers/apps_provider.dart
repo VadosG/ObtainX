@@ -1795,8 +1795,6 @@ _bgRunUpdateCheck(
   return (updates: updates, errors: errors, toThrow: toThrow);
 }
 
-class CancellationException implements Exception {}
-
 class CancellationToken {
   bool _cancelled = false;
   bool get isCancelled => _cancelled;

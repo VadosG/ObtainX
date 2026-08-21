@@ -324,9 +324,27 @@ String list2FriendlyString(List<String> list) {
             .join('');
 }
 
+class CancellationException implements Exception {
+  final String? message;
+  const CancellationException([this.message]);
+
+  @override
+  String toString() => message ?? tr('cancelled');
+}
+
 // Fork-only UI helpers: surface an error/message as a snackbar (recoverable)
 // or a copyable dialog (unexpected). Used across the fork's pages.
 void showMessage(dynamic e, {bool isError = false, ThemeData? theme}) {
+  if (e is CancellationException) {
+    unawaited(LogsProvider().add(e.toString(), level: LogLevel.info));
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(e.toString()),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+    return;
+  }
   unawaited(
     LogsProvider().add(
       e.toString(),

@@ -10,6 +10,7 @@ import 'package:obtainium/components/app_page_section_title.dart';
 import 'package:obtainium/components/bulk_add_widget.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form_renderer.dart';
+import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
 import 'package:obtainium/components/version_regex_assist_dialog.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
@@ -70,7 +71,29 @@ enum _AddAppLauncherDestination {
   githubStars,
 }
 
-enum _PackageIdDetectionChoice { download, trackOnly }
+class _PackageIdDetectionResult {
+  final bool isTrackOnly;
+  final Object? downloadedArtifact;
+  final int? preferredApkIndex;
+  final Object? error;
+
+  const _PackageIdDetectionResult.trackOnly()
+    : isTrackOnly = true,
+      downloadedArtifact = null,
+      preferredApkIndex = null,
+      error = null;
+
+  const _PackageIdDetectionResult.downloaded(
+    this.downloadedArtifact, {
+    this.preferredApkIndex,
+  }) : isTrackOnly = false,
+       error = null;
+
+  const _PackageIdDetectionResult.error(this.error)
+    : isTrackOnly = false,
+      downloadedArtifact = null,
+      preferredApkIndex = null;
+}
 
 class AddAppPage extends StatefulWidget {
   const AddAppPage({super.key, this.homeFabChromeTick, this.onStateChanged})
@@ -1323,35 +1346,19 @@ class AddAppPageState extends State<AddAppPage> {
           null;
     }
 
-    Future<_PackageIdDetectionChoice?>
-    getPackageIdDetectionConfirmation() async {
+    Future<_PackageIdDetectionResult?> showDownloadApkToIdentifyAppDialog(
+      App app,
+    ) async {
       final NavigatorState? navigator = globalNavigatorKey.currentState;
       if (navigator == null || !navigator.mounted) return null;
-      return showDialog<_PackageIdDetectionChoice>(
+      return showDialog<_PackageIdDetectionResult>(
         context: navigator.context,
+        barrierDismissible: false,
         builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            title: Text(tr('downloadAPKToIdentifyAppQuestion')),
-            contentPadding: appDialogContentPadding,
-            content: Text(tr('downloadAPKToIdentifyAppExplanation')),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: Text(tr('cancel')),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(
-                  dialogContext,
-                ).pop(_PackageIdDetectionChoice.trackOnly),
-                child: Text(tr('trackOnly')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(
-                  dialogContext,
-                ).pop(_PackageIdDetectionChoice.download),
-                child: Text(tr('downloadX', args: [tr('app')])),
-              ),
-            ],
+          return _DownloadApkToIdentifyAppDialog(
+            app: app,
+            appsProvider: appsProvider,
+            notificationsProvider: notificationsProvider,
           );
         },
       );
@@ -1429,35 +1436,26 @@ class AddAppPageState extends State<AddAppPage> {
           );
           // Only download the APK here if you need to for the package ID
           if (isTempId(app) && app.additionalSettings['trackOnly'] != true) {
-            final packageIdDetectionChoice =
-                await getPackageIdDetectionConfirmation();
-            if (packageIdDetectionChoice == null) {
+            final detectionResult = await showDownloadApkToIdentifyAppDialog(
+              app,
+            );
+            if (detectionResult == null) {
               throw ObtainiumError(tr('cancelled'));
             }
-            if (packageIdDetectionChoice ==
-                _PackageIdDetectionChoice.trackOnly) {
+            if (detectionResult.isTrackOnly) {
               app.additionalSettings['trackOnly'] = true;
-            } else {
-              if (!context.mounted) return;
-              final apkUrl = await appsProvider.confirmAppFileUrl(
-                app,
-                false,
-                allowUserInteraction: true,
-              );
-              if (apkUrl == null) {
+            } else if (detectionResult.error != null) {
+              if (detectionResult.error is CancellationException) {
                 throw ObtainiumError(tr('cancelled'));
               }
-              app = app.copyWith(
-                preferredApkIndex: app.apkUrls
-                    .map((e) => e.value)
-                    .toList()
-                    .indexOf(apkUrl.value),
-              );
-              final downloadedArtifact = await appsProvider.downloadApp(
-                app,
-                allowUserInteraction: true,
-                notificationsProvider: notificationsProvider,
-              );
+              throw detectionResult.error!;
+            } else if (detectionResult.downloadedArtifact != null) {
+              if (detectionResult.preferredApkIndex != null) {
+                app = app.copyWith(
+                  preferredApkIndex: detectionResult.preferredApkIndex!,
+                );
+              }
+              final downloadedArtifact = detectionResult.downloadedArtifact!;
               DownloadedApk? downloadedFile;
               DownloadedDir? downloadedDir;
               if (downloadedArtifact is DownloadedApk) {
@@ -2726,5 +2724,179 @@ class AddAppPageState extends State<AddAppPage> {
     final String? assetPath = storeSourceAssetPathForClassName(sourceName);
     if (assetPath == null) return const Icon(Icons.store_rounded, size: 20);
     return StoreSourceIconImage(assetPath: assetPath, size: 20);
+  }
+}
+
+class _DownloadApkToIdentifyAppDialog extends StatefulWidget {
+  final App app;
+  final AppsProvider appsProvider;
+  final NotificationsProvider notificationsProvider;
+
+  const _DownloadApkToIdentifyAppDialog({
+    required this.app,
+    required this.appsProvider,
+    required this.notificationsProvider,
+  });
+
+  @override
+  State<_DownloadApkToIdentifyAppDialog> createState() =>
+      _DownloadApkToIdentifyAppDialogState();
+}
+
+class _DownloadApkToIdentifyAppDialogState
+    extends State<_DownloadApkToIdentifyAppDialog> {
+  bool _isDownloading = false;
+  bool _isCancelling = false;
+  double? _downloadProgress;
+  int? _downloadReceivedBytes;
+  int? _downloadTotalBytes;
+  late App _currentApp;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentApp = widget.app;
+  }
+
+  Future<void> _startDownload() async {
+    if (_isDownloading) return;
+    // Flip this synchronously before the first await below, so a second tap
+    // on "Download" while `confirmAppFileUrl` is still pending (e.g. a single
+    // APK URL, which shows no intermediate picker) is rejected by the guard
+    // above instead of racing a second concurrent downloadApp() call.
+    setState(() {
+      _isDownloading = true;
+    });
+    try {
+      final apkUrl = await widget.appsProvider.confirmAppFileUrl(
+        _currentApp,
+        false,
+        allowUserInteraction: true,
+      );
+      if (apkUrl == null) {
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _isCancelling = false;
+          });
+        }
+        return;
+      }
+      if (!mounted) return;
+      final selectedApkIndex = _currentApp.apkUrls
+          .map((e) => e.value)
+          .toList()
+          .indexOf(apkUrl.value);
+      if (selectedApkIndex >= 0) {
+        _currentApp = _currentApp.copyWith(preferredApkIndex: selectedApkIndex);
+      }
+
+      final downloadedArtifact = await widget.appsProvider.downloadApp(
+        _currentApp,
+        allowUserInteraction: true,
+        notificationsProvider: widget.notificationsProvider,
+        onProgress: (progress, received, total) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = progress;
+              _downloadReceivedBytes = received;
+              _downloadTotalBytes = total;
+            });
+          }
+        },
+      );
+      if (mounted) {
+        Navigator.of(context).pop(
+          _PackageIdDetectionResult.downloaded(
+            downloadedArtifact,
+            preferredApkIndex: _currentApp.preferredApkIndex,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(_PackageIdDetectionResult.error(e));
+      }
+    }
+  }
+
+  void _cancel() {
+    if (_isDownloading) {
+      setState(() {
+        _isCancelling = true;
+      });
+      widget.appsProvider.cancelDownload(_currentApp.id);
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final String? downloadSizeText = formatDownloadSize(
+      _downloadReceivedBytes,
+      _downloadTotalBytes,
+    );
+
+    return PopScope(
+      canPop: !_isDownloading,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isDownloading) {
+          _cancel();
+        }
+      },
+      child: AlertDialog(
+        title: Text(tr('downloadAPKToIdentifyAppQuestion')),
+        contentPadding: appDialogContentPadding,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(tr('downloadAPKToIdentifyAppExplanation')),
+            if (_isDownloading) ...[
+              const SizedBox(height: 16),
+              LinearRipplingWavyProgressIndicator(
+                value: _downloadProgress != null
+                    ? (_downloadProgress! / 100).clamp(0.0, 1.0)
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _downloadProgress != null
+                        ? '${_downloadProgress!.toInt()}%'
+                        : tr('pleaseWait'),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  if (downloadSizeText != null)
+                    Text(downloadSizeText, style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _isCancelling ? null : _cancel,
+            child: Text(tr('cancel')),
+          ),
+          if (!_isDownloading) ...[
+            TextButton(
+              onPressed: () => Navigator.of(
+                context,
+              ).pop(const _PackageIdDetectionResult.trackOnly()),
+              child: Text(tr('trackOnly')),
+            ),
+            FilledButton(
+              onPressed: _startDownload,
+              child: Text(tr('downloadX', args: [tr('app')])),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

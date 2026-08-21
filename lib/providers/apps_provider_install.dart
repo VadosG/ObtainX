@@ -386,6 +386,7 @@ extension AppsProviderInstall on AppsProvider {
     bool allowUserInteraction = false,
     NotificationsProvider? notificationsProvider,
     bool useExisting = true,
+    void Function(double? progress, int? received, int? total)? onProgress,
   }) async {
     final initialNotification = DownloadNotification(
       app.finalName,
@@ -484,6 +485,7 @@ extension AppsProviderInstall on AppsProvider {
         int? received,
         int? total,
       ]) {
+        onProgress?.call(progress, received, total);
         final int? prog = progress?.ceil();
         if (apps[app.id] != null) {
           apps[app.id]!.downloadReceivedBytes = received;
@@ -589,6 +591,7 @@ extension AppsProviderInstall on AppsProvider {
           unawaited(notificationsProvider?.notify(notif));
         }
       }
+      onProgress?.call(_remainingStepsProgress.toDouble(), null, null);
       PackageInfo? newInfo;
       final originalAssetName = app.apkUrls[app.preferredApkIndex].key
           .toLowerCase();
