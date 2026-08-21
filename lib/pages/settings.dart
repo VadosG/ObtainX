@@ -39,6 +39,7 @@ import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -1618,10 +1619,9 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        tr('dismiss'),
-                                                      ),
+                                                    buildAppSnackBar(
+                                                      context,
+                                                      tr('dismiss'),
                                                     ),
                                                   );
                                                   setState(() {});
@@ -1650,20 +1650,20 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        tr(
-                                                          'githubPATValidated',
-                                                        ),
-                                                      ),
+                                                    buildAppSnackBar(
+                                                      context,
+                                                      tr('githubPATValidated'),
+                                                      type: ToastType.success,
                                                     ),
                                                   );
                                                 } else {
                                                   ScaffoldMessenger.of(
                                                     context,
                                                   ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(error),
+                                                    buildAppSnackBar(
+                                                      context,
+                                                      error,
+                                                      type: ToastType.error,
                                                     ),
                                                   );
                                                 }
@@ -1811,8 +1811,9 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                               ScaffoldMessenger.of(
                                                 context,
                                               ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(tr('dismiss')),
+                                                buildAppSnackBar(
+                                                  context,
+                                                  tr('dismiss'),
                                                 ),
                                               );
                                               setState(() {});
@@ -1841,17 +1842,21 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                               ScaffoldMessenger.of(
                                                 context,
                                               ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    tr('gitlabPATValidated'),
-                                                  ),
+                                                buildAppSnackBar(
+                                                  context,
+                                                  tr('gitlabPATValidated'),
+                                                  type: ToastType.success,
                                                 ),
                                               );
                                             } else {
                                               ScaffoldMessenger.of(
                                                 context,
                                               ).showSnackBar(
-                                                SnackBar(content: Text(error)),
+                                                buildAppSnackBar(
+                                                  context,
+                                                  error,
+                                                  type: ToastType.error,
+                                                ),
                                               );
                                             }
                                           }
@@ -2092,8 +2097,10 @@ class _CustomFontTile extends StatelessWidget {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(tr('settingsCustomFontSuccess')),
+          buildAppSnackBar(
+            context,
+            tr('settingsCustomFontSuccess'),
+            type: ToastType.success,
             duration: const Duration(seconds: 2),
           ),
         );
@@ -2101,9 +2108,10 @@ class _CustomFontTile extends StatelessWidget {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(tr('settingsCustomFontErrorInvalid')),
-            duration: const Duration(seconds: 4),
+          buildAppSnackBar(
+            context,
+            tr('settingsCustomFontErrorInvalid'),
+            type: ToastType.error,
           ),
         );
       }
@@ -2128,8 +2136,10 @@ class _CustomFontTile extends StatelessWidget {
                 sp.customFontName = null;
                 sp.customFontPath = null;
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(tr('settingsCustomFontResetSuccess')),
+                  buildAppSnackBar(
+                    context,
+                    tr('settingsCustomFontResetSuccess'),
+                    type: ToastType.success,
                     duration: const Duration(seconds: 2),
                   ),
                 );
@@ -2664,7 +2674,11 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
           ),
           onTap: !_loading && !_appManagerInstalled
               ? () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(tr('appManagerNotInstalledSnackbar'))),
+                  buildAppSnackBar(
+                    context,
+                    tr('appManagerNotInstalledSnackbar'),
+                    type: ToastType.warning,
+                  ),
                 )
               : null,
           trailing: Row(
@@ -2738,8 +2752,10 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
           ),
           onTap: !_loading && !_letMeDowngradeInstalled
               ? () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(tr('letMeDowngradeNotInstalledSnackbar')),
+                  buildAppSnackBar(
+                    context,
+                    tr('letMeDowngradeNotInstalledSnackbar'),
+                    type: ToastType.warning,
                   ),
                 )
               : null,
@@ -2786,8 +2802,10 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
               title: Text(tr('enableVirusTotalScanning')),
               onTap: !hasValidatedKey
                   ? () => ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(tr('virusTotalNotValidatedSnackbar')),
+                      buildAppSnackBar(
+                        context,
+                        tr('virusTotalNotValidatedSnackbar'),
+                        type: ToastType.warning,
                       ),
                     )
                   : null,
@@ -2920,12 +2938,10 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                                               ScaffoldMessenger.of(
                                                 context,
                                               ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    tr(
-                                                      'virusTotalKeyValidated',
-                                                    ),
-                                                  ),
+                                                buildAppSnackBar(
+                                                  context,
+                                                  tr('virusTotalKeyValidated'),
+                                                  type: ToastType.success,
                                                 ),
                                               );
                                               setState(() {});
@@ -2934,7 +2950,11 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                                               ScaffoldMessenger.of(
                                                 context,
                                               ).showSnackBar(
-                                                SnackBar(content: Text(error)),
+                                                buildAppSnackBar(
+                                                  context,
+                                                  error,
+                                                  type: ToastType.error,
+                                                ),
                                               );
                                             }
                                           }

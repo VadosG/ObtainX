@@ -12,6 +12,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 
 Map<String, dynamic>? _jsonObjectFromResponseBody(String responseBody) {
@@ -424,14 +425,18 @@ class GitHub extends AppSource {
     }
     if (error == null) {
       storePATValidation(creds, settingsProvider);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(tr('githubPATValidated'))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        buildAppSnackBar(
+          context,
+          tr('githubPATValidated'),
+          type: ToastType.success,
+        ),
+      );
     } else {
       clearPATValidation(settingsProvider);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(error)));
+      ).showSnackBar(buildAppSnackBar(context, error, type: ToastType.error));
     }
   }
 

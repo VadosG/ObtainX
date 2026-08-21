@@ -58,6 +58,7 @@ import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -1598,23 +1599,21 @@ class _SwipeableListItemState extends State<_SwipeableListItem>
               .removeAppsWithModal(context, [app]);
           if (removeResult.shouldShowSnackBar) {
             final Set<String> undoAppIds = removeResult.deferredUndoAppIds;
-            messenger
-              ?..clearSnackBars()
-              ..showSnackBar(
-                SnackBar(
-                  content: Text(tr('xAppsRemoved', args: ['1'])),
+            if (messenger != null && messenger.mounted) {
+              messenger.clearSnackBars();
+              messenger.showSnackBar(
+                buildAppSnackBar(
+                  messenger.context,
+                  tr('xAppsRemoved', args: ['1']),
                   persist: false,
                   duration: const Duration(seconds: 5),
-                  behavior: SnackBarBehavior.floating,
-                  action: undoAppIds.isNotEmpty
-                      ? SnackBarAction(
-                          label: tr('undo'),
-                          onPressed: () => provider
-                              .undoDeferredObtainiumRemovals(undoAppIds),
-                        )
+                  actionLabel: undoAppIds.isNotEmpty ? tr('undo') : null,
+                  onAction: undoAppIds.isNotEmpty
+                      ? () => provider.undoDeferredObtainiumRemovals(undoAppIds)
                       : null,
                 ),
               );
+            }
           }
         }
       case SwipeAction.open:
@@ -5311,27 +5310,26 @@ class AppsPageState extends State<AppsPage> {
                             removeResult.deferredUndoAppIds.isNotEmpty
                             ? removeResult.deferredUndoAppIds.length
                             : currentSelectedApps.length;
-                        messenger
-                          ?..clearSnackBars()
-                          ..showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                tr('xAppsRemoved', args: ['$removedCount']),
-                              ),
+                        if (messenger != null && messenger.mounted) {
+                          messenger.clearSnackBars();
+                          messenger.showSnackBar(
+                            buildAppSnackBar(
+                              messenger.context,
+                              tr('xAppsRemoved', args: ['$removedCount']),
                               persist: false,
                               duration: const Duration(seconds: 5),
-                              behavior: SnackBarBehavior.floating,
-                              action: undoAppIds.isNotEmpty
-                                  ? SnackBarAction(
-                                      label: tr('undo'),
-                                      onPressed: () => appsProviderRef
-                                          .undoDeferredObtainiumRemovals(
-                                            undoAppIds,
-                                          ),
-                                    )
+                              actionLabel: undoAppIds.isNotEmpty
+                                  ? tr('undo')
+                                  : null,
+                              onAction: undoAppIds.isNotEmpty
+                                  ? () => appsProviderRef
+                                        .undoDeferredObtainiumRemovals(
+                                          undoAppIds,
+                                        )
                                   : null,
                             ),
                           );
+                        }
                       }
                     },
                     autoPop: true,
@@ -6593,41 +6591,40 @@ class AppsPageState extends State<AppsPage> {
                                                                   .length
                                                             : selectedApps
                                                                   .length;
-                                                        messenger
-                                                          ?..clearSnackBars()
-                                                          ..showSnackBar(
-                                                            SnackBar(
-                                                              content: Text(
-                                                                tr(
-                                                                  'xAppsRemoved',
-                                                                  args: [
-                                                                    '$removedCount',
-                                                                  ],
-                                                                ),
+                                                        if (messenger != null &&
+                                                            messenger.mounted) {
+                                                          messenger
+                                                              .clearSnackBars();
+                                                          messenger.showSnackBar(
+                                                            buildAppSnackBar(
+                                                              messenger.context,
+                                                              tr(
+                                                                'xAppsRemoved',
+                                                                args: [
+                                                                  '$removedCount',
+                                                                ],
                                                               ),
                                                               persist: false,
                                                               duration:
                                                                   const Duration(
                                                                     seconds: 5,
                                                                   ),
-                                                              behavior:
-                                                                  SnackBarBehavior
-                                                                      .floating,
-                                                              action:
+                                                              actionLabel:
                                                                   undoAppIds
                                                                       .isNotEmpty
-                                                                  ? SnackBarAction(
-                                                                      label: tr(
-                                                                        'undo',
-                                                                      ),
-                                                                      onPressed: () =>
-                                                                          appsProviderRef.undoDeferredObtainiumRemovals(
-                                                                            undoAppIds,
-                                                                          ),
-                                                                    )
+                                                                  ? tr('undo')
+                                                                  : null,
+                                                              onAction:
+                                                                  undoAppIds
+                                                                      .isNotEmpty
+                                                                  ? () => appsProviderRef
+                                                                        .undoDeferredObtainiumRemovals(
+                                                                          undoAppIds,
+                                                                        )
                                                                   : null,
                                                             ),
                                                           );
+                                                        }
                                                       }
                                                     },
                                                     icon: const Icon(

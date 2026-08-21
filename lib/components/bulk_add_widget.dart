@@ -27,6 +27,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter/gestures.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
+import 'package:obtainium/widgets/app_toast.dart';
 
 const double _bulkBottomActionGap = 8.0;
 const double _bulkBottomActionHorizontalPadding = 16.0;
@@ -2853,7 +2854,11 @@ class _GithubPatSheetState extends State<_GithubPatSheet> {
                         );
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(tr('githubPATValidated'))),
+                            buildAppSnackBar(
+                              context,
+                              tr('githubPATValidated'),
+                              type: ToastType.success,
+                            ),
                           );
                         }
                         setState(() {
