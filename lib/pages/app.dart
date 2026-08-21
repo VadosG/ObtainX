@@ -370,47 +370,99 @@ class _DownloadProgressAction extends StatelessWidget {
               ? tr('flaggedByVirusTotal')
               : tr('virusTotalScanFailed'))
         : tr('downloadingX', args: ['${dp.round()}%$bytesLabel']);
-    final Color barColor = isFlaggedState
-        ? actionTheme.colorScheme.error
-        : actionTheme.colorScheme.primary;
-    final Color textColor = isFlaggedState
-        ? actionTheme.colorScheme.onError
-        : actionTheme.colorScheme.onSurface.withAlpha(200);
     final Widget progressBar = ClipRRect(
       borderRadius: BorderRadius.circular(expressiveRadius),
       child: SizedBox(
         height: 52,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(color: actionTheme.colorScheme.onSurface.withAlpha(31)),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FractionallySizedBox(
-                widthFactor: (isBusy || isFlaggedState) ? 1.0 : dp / 100,
-                child: Container(
-                  color: barColor.withAlpha(
-                    isFlaggedState ? 220 : (isBusy ? 55 : 220),
+        child: isFlaggedState
+            ? Container(
+                color: actionTheme.colorScheme.error,
+                alignment: Alignment.center,
+                child: Text(
+                  label,
+                  style: actionTheme.textTheme.labelLarge?.copyWith(
+                    color: actionTheme.colorScheme.onError,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+              )
+            : isBusy
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                    color: actionTheme.colorScheme.surfaceContainerHighest,
+                  ),
+                  LinearProgressIndicator(
+                    backgroundColor: Colors.transparent,
+                    color: actionTheme.colorScheme.primary,
+                  ),
+                  Center(
+                    child: Text(
+                      label,
+                      style: actionTheme.textTheme.labelLarge?.copyWith(
+                        color: actionTheme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final double progress = (dp / 100).clamp(0.0, 1.0);
+                  final double fillWidth = constraints.maxWidth * progress;
+
+                  Widget buildCenteredLabel(Color textColor) => Center(
+                    child: Text(
+                      label,
+                      style: actionTheme.textTheme.labelLarge?.copyWith(
+                        color: textColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Container(
+                        color: actionTheme.colorScheme.surfaceContainerHighest,
+                      ),
+                      buildCenteredLabel(
+                        actionTheme.colorScheme.onSurfaceVariant,
+                      ),
+                      if (fillWidth > 0)
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: fillWidth,
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.centerLeft,
+                              minWidth: constraints.maxWidth,
+                              maxWidth: constraints.maxWidth,
+                              minHeight: constraints.maxHeight,
+                              maxHeight: constraints.maxHeight,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Container(
+                                    color: actionTheme.colorScheme.primary,
+                                  ),
+                                  buildCenteredLabel(
+                                    actionTheme.colorScheme.onPrimary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
-            ),
-            if (isBusy)
-              LinearProgressIndicator(
-                backgroundColor: Colors.transparent,
-                color: actionTheme.colorScheme.primary.withAlpha(120),
-              ),
-            Center(
-              child: Text(
-                label,
-                style: actionTheme.textTheme.labelLarge?.copyWith(
-                  color: textColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
     return Column(
