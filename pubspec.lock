@@ -39,10 +39,10 @@ packages:
     dependency: "direct main"
     description:
       name: animations
-      sha256: "9cb469212ea51be27097f23b519d594c01171721347b55df9334fff653659e7f"
+      sha256: "5ec868ffa78851e6f3f32e9377b780c7ae2087a5523d8b5e6df59bd8287ac5dd"
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.0"
+    version: "3.0.0"
   app_links:
     dependency: "direct main"
     description:
@@ -167,10 +167,10 @@ packages:
     dependency: transitive
     description:
       name: code_assets
-      sha256: bf394f466ba9205f1812a0433b392d6af280f155f56651eda7c18cc32ed493b8
+      sha256: cfd4f5f575a49c5f10ca856e9846073f1e6c3ee94912377eea5f6cefc5272941
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.1"
+    version: "2.0.0"
   collection:
     dependency: transitive
     description:
@@ -227,14 +227,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.9"
+  cupertino_ui:
+    dependency: transitive
+    description:
+      name: cupertino_ui
+      sha256: "7ed8ce4159d342eec4c65f4ea6eec57adaf9365404378541f38efc1da20a5b3d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   dbus:
     dependency: transitive
     description:
       name: dbus
-      sha256: "0ce9b0a839e6dee59a37a623d2fc26a35bbbe6404213e419b0d6411023d62645"
+      sha256: a48d5da28e89bd02196e80d81ed8d7954923d00a0f4a68cc20b575038f023383
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.14"
+    version: "0.7.15"
   device_info_plus:
     dependency: "direct main"
     description:
@@ -444,10 +452,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_foreground_task
-      sha256: "2668bad2e4c433290977e1749ca9b2df70d23b61eab0a364968db43dafc90a5d"
+      sha256: "6aea09d5539f8e21499185edd2e8d4998daf5d5eaba3db70edc682925287d96f"
       url: "https://pub.dev"
     source: hosted
-    version: "11.0.0"
+    version: "11.0.1"
   flutter_launcher_icons:
     dependency: "direct dev"
     description:
@@ -743,6 +751,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.0"
+  material_ui:
+    dependency: transitive
+    description:
+      name: material_ui
+      sha256: "4f3f38b9953df0a87d6bf5f21880029f77c47048487d5339410c39936be4683b"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   meta:
     dependency: transitive
     description:
@@ -763,10 +779,10 @@ packages:
     dependency: transitive
     description:
       name: native_toolchain_c
-      sha256: a1c26117c48cebe5677b0cf0e33a980a79a7c5577effc86f52e5a0d309cdcb60
+      sha256: "9d233b6f2d9c52e1a2b5fbe70451d2c10ac674d3bb419d0ec8de14989d437c26"
       url: "https://pub.dev"
     source: hosted
-    version: "0.19.3"
+    version: "0.19.4"
   nested:
     dependency: transitive
     description:
@@ -787,10 +803,10 @@ packages:
     dependency: transitive
     description:
       name: objective_c
-      sha256: b7fb95a6d9a4f009edd63dc5ac69f07420b23a16161c6dd8660290b59c602e8e
+      sha256: ad56fd53a78ff6b1472fa59ff2a4e8b8ccabafc586fc263a1dfad0b99b5553e3
       url: "https://pub.dev"
     source: hosted
-    version: "9.5.0"
+    version: "9.6.0"
   package_config:
     dependency: transitive
     description:
@@ -943,6 +959,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.5.2"
+  process:
+    dependency: transitive
+    description:
+      name: process
+      sha256: c6248e4526673988586e8c00bb22a49210c258dc91df5227d5da9748ecf79744
+      url: "https://pub.dev"
+    source: hosted
+    version: "5.0.5"
   progress_indicator_m3e:
     dependency: "direct main"
     description:
@@ -1130,10 +1154,10 @@ packages:
     dependency: transitive
     description:
       name: sqlite3
-      sha256: "64b2c63c8232dd20d14b34105a81ebfd74320442e8451f836179ec89986aa478"
+      sha256: "4c7fe79840389aaeaf05fd093f795b631b5a98e2bd28d54e555c100f4a9c7a1c"
       url: "https://pub.dev"
     source: hosted
-    version: "3.5.1"
+    version: "3.5.2"
   stack_trace:
     dependency: transitive
     description:
@@ -1386,18 +1410,18 @@ packages:
     dependency: "direct main"
     description:
       name: workmanager
-      sha256: "6a919b83138e457dc8f68d725755e11f47e19a8943b4554f3abbb18fdafa8e2d"
+      sha256: c2c7a3eb984cfcf5623308042fc8270e7e02f5021b34f491ffc0a1ec8e281d5c
       url: "https://pub.dev"
     source: hosted
-    version: "0.10.8"
+    version: "0.10.9"
   workmanager_android:
     dependency: transitive
     description:
       name: workmanager_android
-      sha256: "08bbc7805b762bd93de6b137ef5c2651d305e43adf00b8e0e6da9bc525e40281"
+      sha256: "187d1d34864f57f9e388b33b88c001c494093c53679831a3dec2e8176e8829d1"
       url: "https://pub.dev"
     source: hosted
-    version: "0.10.7"
+    version: "0.10.8"
   workmanager_apple:
     dependency: transitive
     description:
@@ -1442,10 +1466,10 @@ packages:
     dependency: transitive
     description:
       name: xml
-      sha256: "971043b3a0d3da28727e40ed3e0b5d18b742fa5a68665cca88e74b7876d5e025"
+      sha256: "67f0aff7be013d107995e9b75bf4e7f2c3ef2dfdb2c8e68024bba0a7fd5756a4"
       url: "https://pub.dev"
     source: hosted
-    version: "6.6.1"
+    version: "7.0.1"
   yaml:
     dependency: transitive
     description:

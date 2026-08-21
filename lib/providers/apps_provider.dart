@@ -817,7 +817,7 @@ Future<File> _downloadFile(
       // a file/socket error caused by the abort) so callers handle it silently.
       if (e is CancellationException ||
           (cancellationToken?.isCancelled ?? false)) {
-        throw CancellationException();
+        throw const CancellationException();
       }
       rethrow;
     }
@@ -1802,7 +1802,7 @@ class CancellationToken {
   void cancel() => _cancelled = true;
 
   void throwIfCancelled() {
-    if (_cancelled) throw CancellationException();
+    if (_cancelled) throw const CancellationException();
   }
 }
 

@@ -48,7 +48,7 @@ dependencies:
   fluttertoast: ^10.0.0
   device_info_plus: ^13.2.0
   file_picker: ^12.0.0
-  animations: ^2.2.0
+  animations: ^3.0.0
   android_package_installer: # TODO: Upstream PR pending; if not accepted, keep fork maintained
     git:
       url: https://github.com/ImranR98/android_package_installer
