@@ -96,6 +96,19 @@ const Set<String> validMalwareScanStatuses = {
   malwareScanStatusError,
 };
 
+/// Per-app companion to the global `enableVirusTotalScanning` setting: turning
+/// this off excludes one app from the pre-install VirusTotal scan. Same polarity
+/// and label as the global switch on purpose - on means "scan", so the two read
+/// identically wherever they appear.
+///
+/// Defaults to **true**, which every read MUST repeat as
+/// `getBool(enableVirusTotalScanKey, defaultValue: true)`. Apps saved before this
+/// key existed have no entry for it, and [TypedSettings.getBool]'s own default is
+/// false, so a bare `getBool(enableVirusTotalScanKey)` reads as "don't scan" and
+/// silently disables scanning for every pre-existing app. There is exactly one
+/// read site - AppsProvider.willScanApkWithVirusTotal - so keep it that way.
+const String enableVirusTotalScanKey = 'enableVirusTotalScan';
+
 /// Coerces a stored JSON value into a valid malware-scan status, or null.
 String? malwareScanStatusFromJsonValue(Object? value) {
   if (value is String && validMalwareScanStatuses.contains(value)) {
@@ -1138,6 +1151,17 @@ abstract class AppSource {
         label: tr('refreshBeforeDownload'),
       ),
     ],
+    [
+      // Same label as the global setting in Settings > Integrations,
+      // deliberately: this is that switch scoped to one app, not a separate
+      // opt-out with inverted meaning.
+      GeneratedFormSwitch(
+        enableVirusTotalScanKey,
+        label: tr('enableVirusTotalScanning'),
+        value: true,
+        labelTooltip: tr('perAppVirusTotalScanTooltip'),
+      ),
+    ],
   ];
 
   /// The choices for the unified "Use as version string" (`versionStringSource`)
@@ -1442,6 +1466,20 @@ abstract class MassAppUrlSource {
 /// Delegates to [VersionService.regExValidator].
 String? regExValidator(String? value) => VersionService().regExValidator(value);
 
+/// The user-supplied "App ID - Custom" value, or null when none was given.
+///
+/// Empty means "not supplied", not "the id is the empty string".
+/// [GeneratedFormTextField] defaults to `''`, and the Add-app page assigns the
+/// whole form value map to `additionalSettings` on every change, so an untouched
+/// box reaches callers as `''` as soon as the user touches any other option.
+/// Treating that as explicit made the app id blank.
+/// [IzzyOnDroid.tryInferringAppId] guards its own read the same way.
+String? explicitAppIdFromSettings(Map<String, dynamic> additionalSettings) {
+  final String? raw = additionalSettings['appId'] as String?;
+  final String? trimmed = raw?.trim();
+  return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+}
+
 /// Returns true if the app's ID is a temporary placeholder rather than a real
 /// package name. Matches [generateTempID]'s sha256-hex prefix and legacy numeric
 /// IDs; real package names contain a dot and never match.
@@ -1677,7 +1715,7 @@ class SourceProvider {
     bool inferAppIdIfOptional,
   ) async {
     if (currentApp?.id != null) return currentApp!.id;
-    final explicitId = additionalSettings['appId'] as String?;
+    final String? explicitId = explicitAppIdFromSettings(additionalSettings);
     if (explicitId != null) return explicitId;
     if (!trackOnly &&
         (!source.appIdInferIsOptional ||

@@ -9,6 +9,7 @@ import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' show parse;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 
@@ -325,7 +326,9 @@ class BulkImportService {
               headers: {
                 'Authorization': auth,
                 'Content-Type': 'application/json',
-                'User-Agent': 'APKUpdater-v3.5.9',
+                // Same Cloudflare allowlist as the HTML pages — see
+                // [apkMirrorAllowlistedUserAgentToken].
+                'User-Agent': apkMirrorUserAgent(),
               },
               body: jsonEncode({
                 'pnames': batch,

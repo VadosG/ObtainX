@@ -246,6 +246,7 @@
     "requiresCredentialsInSettings": "{} needs additional credentials (in Settings)",
     "checkOnStart": "Check for updates on startup",
     "tryInferAppIdFromCode": "Try inferring app ID from source code",
+    "inferAppIdOverriddenByCustom": "Not used while a custom app ID is set below — the custom value takes priority.",
     "removeOnExternalUninstall": "Automatically remove externally uninstalled apps",
     "openAppInfoInAppManager": "Open app info in App Manager",
     "appManagerNotInstalledSnackbar": "\"App Manager\" needs to be installed before this can be enabled",
@@ -334,6 +335,7 @@
     "stayOneVersionBehind": "Stay one version behind latest",
     "useFirstApkOfVersion": "Auto-select first of multiple APKs",
     "refreshBeforeDownload": "Refresh app details before download",
+    "perAppVirusTotalScanTooltip": "Scan this app's downloaded APKs with VirusTotal before installing them. Turn it off to exclude this app from scanning.\n\nThis only has an effect while \"Scan APKs with VirusTotal\" is enabled in Settings with a validated API key.",
     "tencentAppStore": "Tencent App Store",
     "coolApk": "CoolApk",
     "vivoAppStore": "vivo App Store (CN)",
@@ -769,6 +771,7 @@
     "cancelInstall": "Cancel install",
     "installAnyway": "Install anyway",
     "virusTotalViewReport": "View on VirusTotal",
+    "virusTotalRetryScan": "Retry scan",
     "malwareScanFlaggedSkippedTitle": "{} was not updated - VirusTotal flagged its APK",
     "malwareScanErrorSkippedTitle": "{} was not updated - VirusTotal scan failed",
     "malwareScanSkippedPluralTitle": {
