@@ -225,10 +225,17 @@ extension AppsProviderImportExport on AppsProvider {
   }
 
   /// Imports apps (and optionally settings) from a JSON string, returning the parsed apps and a settings-present flag.
+  ///
+  /// [replaceExisting] is "restore" rather than "import": ObtainX's tracked
+  /// apps AND its settings are both reset to out-of-the-box defaults first, so
+  /// the result is OOTB-ObtainX-plus-whatever-the-backup-contains rather than
+  /// the backup merged on top of whatever was there before. It never touches
+  /// installed apps or their on-device data — only ObtainX's own state.
   Future<MapEntry<List<App>, bool>> import(
     String appsJSON, {
     Set<String>? selectedAppIds,
     bool importSettings = true,
+    bool replaceExisting = false,
   }) async {
     final backupContent = parseBackupContent(appsJSON);
     List<App> importedApps = backupContent.apps;
@@ -240,6 +247,13 @@ extension AppsProviderImportExport on AppsProvider {
           .toList();
     }
 
+    // Reset settings to OOTB before folder reconciliation reads
+    // settingsProvider.appFolders, so a restore starts from a clean slate
+    // instead of merging backup folders into whatever folders already existed.
+    if (replaceExisting) {
+      await settingsProvider.resetToDefaults();
+    }
+
     // Merge backed-up folders into existing ones (by name) and remap each app's
     // folder references to the resolved IDs before saving.
     importedApps = _reconcileImportedFolders(
@@ -248,6 +262,12 @@ extension AppsProviderImportExport on AppsProvider {
     );
 
     await waitForAppsToLoad();
+    if (replaceExisting) {
+      final existingAppIds = apps.keys.toList();
+      if (existingAppIds.isNotEmpty) {
+        await removeApps(existingAppIds);
+      }
+    }
     for (var i = 0; i < importedApps.length; i++) {
       final a = importedApps[i];
       final installedInfo = await getInstalledInfo(a.id);

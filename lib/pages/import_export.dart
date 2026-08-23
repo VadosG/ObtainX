@@ -20,6 +20,7 @@ import 'package:obtainium/providers/source_provider.dart' show regExValidator;
 import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
+import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
@@ -115,7 +116,10 @@ class _ImportExportPageState extends State<ImportExportPage> {
       }
     }
 
-    Future<void> importObtainiumBackupData(String backupData) async {
+    Future<void> importObtainiumBackupData(
+      String backupData, {
+      bool replaceExisting = false,
+    }) async {
       final BackupContent backupContent;
       try {
         backupContent = appsProvider.parseBackupContent(backupData);
@@ -139,9 +143,15 @@ class _ImportExportPageState extends State<ImportExportPage> {
             hasSettings: hasSettings,
             hasSecrets: hasSecrets,
             existingApps: appsProvider.apps,
+            isRestore: replaceExisting,
           );
 
-      if (selection == null) {
+      // A null selection means either "cancelled" or, for a restore, "the
+      // sheet's own destructive confirmation dialog was declined" - see
+      // BackupImportSheet, which shows that warning on top of itself (rather
+      // than after popping) so declining it leaves the sheet's selections
+      // intact instead of looking like the sheet crashed.
+      if (selection == null || !context.mounted) {
         return;
       }
 
@@ -149,6 +159,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
         backupData,
         selectedAppIds: selection.selectedAppIds,
         importSettings: selection.importSettings,
+        replaceExisting: replaceExisting,
       );
       final cats = settingsProvider.categories;
       appsProvider.apps.forEach((key, appInMemory) {
@@ -160,7 +171,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
       });
       appsProvider.addMissingCategories(settingsProvider);
       String resultMessage =
-          '${tr('importedX', args: [plural('apps', importResult.key.length).toLowerCase()])}${importResult.value ? ' + ${tr('settings').toLowerCase()}' : ''}';
+          '${tr(replaceExisting ? 'restoredX' : 'importedX', args: [plural('apps', importResult.key.length).toLowerCase()])}${importResult.value ? ' + ${tr('settings').toLowerCase()}' : ''}';
       // Settings restore is the only way `iconsDir` comes back, so only a
       // just-restored settings block can possibly have reconnected it.
       if (importResult.value) {
@@ -239,6 +250,30 @@ class _ImportExportPageState extends State<ImportExportPage> {
           });
           importStarted = true;
           await importObtainiumBackupData(backupData);
+        }
+      } catch (err) {
+        showError(err);
+      } finally {
+        if (context.mounted && importStarted) {
+          setState(() {
+            importInProgress = false;
+          });
+        }
+      }
+    }
+
+    Future<void> runObtainiumRestore() async {
+      hapticSelection();
+      var importStarted = false;
+      try {
+        final String? backupData = await pickBackupDataFromSystemPicker();
+        if (backupData != null) {
+          if (!context.mounted) return;
+          setState(() {
+            importInProgress = true;
+          });
+          importStarted = true;
+          await importObtainiumBackupData(backupData, replaceExisting: true);
         }
       } catch (err) {
         showError(err);
@@ -816,6 +851,97 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                   ),
                                 ],
                               ),
+                            ),
+                            Padding(
+                              padding: importPageCardRowPadding,
+                              child: (() {
+                                final bool restoreEnabled = !importInProgress;
+                                final Color restoreForeground =
+                                    restoreEnabled
+                                    ? impScheme.error
+                                    : impScheme.onSurface.withValues(
+                                        alpha: 0.38,
+                                      );
+                                final Color restoreBorderColor =
+                                    restoreEnabled
+                                    ? impScheme.error.withValues(alpha: 0.45)
+                                    : impScheme.onSurface.withValues(
+                                        alpha: 0.12,
+                                      );
+                                return Material(
+                                  color: Colors.transparent,
+                                  shape: StadiumBorder(
+                                    side: BorderSide(
+                                      width: 1,
+                                      color: restoreBorderColor,
+                                    ),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: ConstrainedBox(
+                                    // Matches appTextButtonTheme()'s minimumSize.height (36)
+                                    // so this composite button lines up with the plain
+                                    // Import/Export TextButtons above.
+                                    constraints: const BoxConstraints(
+                                      minHeight: 36,
+                                    ),
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        InkWell(
+                                          onTap: restoreEnabled
+                                              ? runObtainiumRestore
+                                              : null,
+                                          child: Padding(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                  vertical: 6,
+                                                ),
+                                            child: Center(
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 40,
+                                                    ),
+                                                child: Text(
+                                                  tr('obtainiumRestore'),
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                    color: restoreForeground,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          right: 4,
+                                          child: HelpHintIcon(
+                                            richMessage: TextSpan(
+                                              children: [
+                                                TextSpan(
+                                                  text:
+                                                      '${tr('restoreBackupHelpTitle')}\n',
+                                                  style: const TextStyle(
+                                                    fontWeight:
+                                                        FontWeight.bold,
+                                                  ),
+                                                ),
+                                                TextSpan(
+                                                  text: tr(
+                                                    'restoreBackupHelpBody',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              })(),
                             ),
                           ]);
                         },

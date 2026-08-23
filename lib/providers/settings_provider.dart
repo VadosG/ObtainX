@@ -165,6 +165,21 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Wipes every persisted setting back to ObtainX's out-of-the-box defaults.
+  /// Used by backup "Restore" (as opposed to "Import"): a restore is meant to
+  /// be OOTB-ObtainX-plus-whatever-the-backup-contains, not the backup merged
+  /// on top of whatever settings happened to be in place before it.
+  ///
+  /// Re-runs [initializeSettings]'s one-time bootstrap (by clearing the
+  /// [_settingsInitialized] guard) rather than hand-clearing each in-memory
+  /// cache here, so this can't drift out of sync with what a real fresh
+  /// install does.
+  Future<void> resetToDefaults() async {
+    await prefs?.clear();
+    _settingsInitialized = false;
+    await initializeSettings();
+  }
+
   void _removeUnusedUpstreamSettings() {
     if (prefs == null) return;
     prefs!.remove('disableSwipeActions');
