@@ -114,6 +114,28 @@ bool appCategoriesMatchFilter(
   return true;
 }
 
+/// Host whose logo represents [app] in the Apps list source column.
+///
+/// The hostless catch-all sources (HTML, Direct APK link) declare no
+/// [AppSource.hosts], which used to leave the column blank. They fall back to
+/// the tracked URL's own host, so an app added from e.g. mozilla.org shows that
+/// site's favicon - matching what the app page's Sources row already resolves.
+String? sourceBadgeHostForApp(App app) {
+  // Resolved first because [SourceProvider.getSourceTemplate] throws
+  // [UnsupportedURLError] on a URL this malformed, and this runs per row.
+  final String? urlHost = Uri.tryParse(app.url)?.host;
+  if (urlHost == null || urlHost.isEmpty) {
+    return null;
+  }
+  final String? declaredHost = SourceProvider()
+      .getSourceTemplate(app.url, overrideSource: app.overrideSource)
+      .hosts
+      .firstOrNull;
+  return declaredHost != null && declaredHost.isNotEmpty
+      ? declaredHost
+      : urlHost;
+}
+
 bool appIsTrackOnlyForFilter(App app) =>
     app.additionalSettings['trackOnly'] == true;
 
@@ -4542,13 +4564,7 @@ class AppsPageState extends State<AppsPage> {
       final hasUpdate = installed != null && appHasActionableUpdate(app.app);
       final hasUncertainUpdate =
           installed != null && versionOrderUncertainUpdate(app.app);
-      final sourceHost = sourceProvider
-          .getSourceTemplate(
-            app.app.url,
-            overrideSource: app.app.overrideSource,
-          )
-          .hosts
-          .firstOrNull;
+      final sourceHost = sourceBadgeHostForApp(app.app);
       // M3 Container Transform: tapping the row morphs the row's container
       // into the AppPage's container. Replaces the previous
       // `Navigator.push(heroFriendlyAppPageRoute(...))` flow plus the
