@@ -662,11 +662,18 @@ extension AppsProviderLifecycle on AppsProvider {
                     before?.sourceType != sourceType) {
                   dataChanged = true;
                 }
+                // A later install must not keep showing an APK-extracted or
+                // store-fetched icon. Clearing here lets [updateAppIcon] load
+                // the device launcher icon instead of early-returning.
+                final Uint8List? icon = installedInfo != null &&
+                        before?.installedInfo == null
+                    ? null
+                    : before?.icon;
                 apps[app.id] = AppInMemory(
                   app,
                   before?.downloadProgress,
                   installedInfo,
-                  before?.icon,
+                  icon,
                   sourceType: sourceType,
                   download: before?.download,
                 );
@@ -877,7 +884,16 @@ extension AppsProviderLifecycle on AppsProvider {
     return File('${userAppIconsDir.path}/$appId.user.png');
   }
 
-  Future<Uint8List> _resizeIconForCache(Uint8List bytes) async {
+  File _deducedAppIconPngFile(String appId) {
+    return File('${deducedAppIconsDir.path}/$appId.png');
+  }
+
+  /// Whether a deduced icon (APK-extracted or store-fetched) is already stored,
+  /// so callers can skip the work of deducing another one.
+  bool hasDeducedAppIcon(String appId) =>
+      _deducedAppIconPngFile(appId).existsSync();
+
+  Future<Uint8List> _resizeIconForStorage(Uint8List bytes) async {
     try {
       final codec = await ui.instantiateImageCodec(
         bytes,
@@ -943,6 +959,39 @@ extension AppsProviderLifecycle on AppsProvider {
     }
   }
 
+  /// Stores the launcher icon out of a downloaded APK, for apps whose source
+  /// (a code-hosting repo) publishes no icon.
+  ///
+  /// The archive was already parsed for its package id, so the icon costs no
+  /// extra download - only a native decode. That makes it the most trustworthy
+  /// deduced icon available (it comes from the very artifact ObtainX ships), so
+  /// it overwrites a previously stored store-listing icon. It is only a fallback
+  /// for apps that aren't on the device: a user override and an installed app's
+  /// launcher icon both outrank it.
+  Future<void> storeIconFromApkArchive(
+    String appId,
+    String archiveFilePath,
+  ) async {
+    try {
+      final Uint8List? archiveIcon = await NativeFeatures.getApkArchiveIcon(
+        archiveFilePath,
+      );
+      if (archiveIcon == null || !_bytesLookLikeRasterImage(archiveIcon)) {
+        return;
+      }
+      final Uint8List icon = await _resizeIconForStorage(archiveIcon);
+      await _deducedAppIconPngFile(appId).writeAsBytes(icon);
+      if (apps.containsKey(appId) &&
+          apps[appId]!.installedInfo == null &&
+          !_userAppIconPngFile(appId).existsSync()) {
+        apps.update(appId, (value) => value.copyWith(icon: icon));
+        notify();
+      }
+    } catch (e) {
+      unawaited(logs.add('APK icon extraction failed for $appId: $e'));
+    }
+  }
+
   Future<void> updateAppIcon(String? appId, {bool ignoreCache = false}) async {
     if (appId == null || apps[appId] == null) return;
 
@@ -966,28 +1015,54 @@ extension AppsProviderLifecycle on AppsProvider {
       }
     }
 
-    if (apps[appId]!.icon != null && !ignoreCache) return;
+    final File cachedIcon = File('${iconsCacheDir.path}/$appId.png');
+    final bool isInstalled = apps[appId]!.installedInfo != null;
+    if (apps[appId]!.icon != null && !ignoreCache) {
+      // In-memory icons for non-installed apps (APK extract, store fetch) are
+      // already the right answer. After a later install, that same in-memory
+      // icon would otherwise stick forever and beat the device launcher icon.
+      if (!isInstalled) return;
+      if (cachedIcon.existsSync()) return;
+    }
 
-    final cachedIcon = File('${iconsCacheDir.path}/$appId.png');
     if (ignoreCache && cachedIcon.existsSync()) {
       await cachedIcon.delete();
     }
-    final alreadyCached = cachedIcon.existsSync() && !ignoreCache;
     Uint8List? icon;
+    // When the app is on the device, the device supplies the icon - nothing
+    // ObtainX deduces can beat it. The launcher icon is re-derivable from the OS
+    // for free, so it stays in the (disposable) cache. A non-installed app has
+    // no launcher icon, so both of these come up empty and we fall through.
+    final bool alreadyCached = cachedIcon.existsSync() && !ignoreCache;
     if (alreadyCached) {
       icon = await cachedIcon.readAsBytes();
     } else {
       icon = await _getInstalledAppIconSafely(appId);
-    }
-    if (icon == null && !alreadyCached) {
-      final url = apps[appId]!.app.iconUrl;
-      if (url != null && url.isNotEmpty) {
-        icon = await _fetchIconFromUrl(url);
+      if (icon != null) {
+        icon = await _resizeIconForStorage(icon);
+        await cachedIcon.writeAsBytes(icon);
       }
     }
-    if (icon != null && !alreadyCached) {
-      icon = await _resizeIconForCache(icon);
-      await cachedIcon.writeAsBytes(icon);
+    // Deduced icons are for non-installed apps only: extracted from the app's
+    // own APK, or fetched from a store listing. Persisted outside the cache so
+    // "clear cache" can't force that download or network fetch to happen again.
+    final File deducedIcon = _deducedAppIconPngFile(appId);
+    if (!isInstalled && icon == null && deducedIcon.existsSync()) {
+      try {
+        icon = await deducedIcon.readAsBytes();
+      } catch (e) {
+        unawaited(logs.add('Deduced icon load failed for $appId: $e'));
+      }
+    }
+    if (!isInstalled && icon == null) {
+      final url = apps[appId]!.app.iconUrl;
+      if (url != null && url.isNotEmpty) {
+        final Uint8List? fetchedIcon = await _fetchIconFromUrl(url);
+        if (fetchedIcon != null) {
+          icon = await _resizeIconForStorage(fetchedIcon);
+          await deducedIcon.writeAsBytes(icon);
+        }
+      }
     }
     if (icon != null || ignoreCache) {
       final Uint8List? resolvedIcon = icon;
@@ -1019,9 +1094,9 @@ extension AppsProviderLifecycle on AppsProvider {
 
   bool validateUserAppIconPngBytes(Uint8List bytes) => _bytesLookLikePng(bytes);
 
-  /// Icon bytes as shown when the per-app user PNG override is ignored (cache,
-  /// installed app, or [App.iconUrl]). Does not read [userAppIconsDir] or mutate
-  /// state.
+  /// Icon bytes as shown when the per-app user PNG override is ignored
+  /// (installed app or its cache, then the deduced icon, then [App.iconUrl]).
+  /// Does not read [userAppIconsDir] or mutate state.
   Future<Uint8List?> loadIconPreviewExcludingUserOverride(String appId) async {
     if (apps[appId] == null) return null;
     final File cachedIcon = File('${iconsCacheDir.path}/$appId.png');
@@ -1033,6 +1108,17 @@ extension AppsProviderLifecycle on AppsProvider {
       }
     }
     Uint8List? icon = await _getInstalledAppIconSafely(appId);
+    if (apps[appId]!.installedInfo != null) {
+      return icon;
+    }
+    final File deducedIcon = _deducedAppIconPngFile(appId);
+    if (icon == null && deducedIcon.existsSync()) {
+      try {
+        return await deducedIcon.readAsBytes();
+      } catch (e) {
+        unawaited(logs.add('loadIconPreviewExcludingUserOverride deduced: $e'));
+      }
+    }
     if (icon == null) {
       final String? url = apps[appId]!.app.iconUrl;
       if (url != null && url.isNotEmpty) {
@@ -1291,6 +1377,8 @@ extension AppsProviderLifecycle on AppsProvider {
         );
         final cachedIcon = File('${iconsCacheDir.path}/$appId.png');
         if (cachedIcon.existsSync()) cachedIcon.deleteSync();
+        final File deducedIcon = _deducedAppIconPngFile(appId);
+        if (deducedIcon.existsSync()) deducedIcon.deleteSync();
         if (apps.containsKey(appId)) {
           apps.remove(appId);
         }
@@ -1336,6 +1424,14 @@ extension AppsProviderLifecycle on AppsProvider {
     if (previousUserIcon.existsSync()) {
       previousUserIcon.renameSync(newUserIcon.path);
     }
+    final File previousDeducedIcon = _deducedAppIconPngFile(previousPackageId);
+    final File newDeducedIcon = _deducedAppIconPngFile(newPackageId);
+    if (newDeducedIcon.existsSync()) {
+      deleteFile(newDeducedIcon);
+    }
+    if (previousDeducedIcon.existsSync()) {
+      previousDeducedIcon.renameSync(newDeducedIcon.path);
+    }
 
     try {
       await saveApps(
@@ -1346,6 +1442,9 @@ extension AppsProviderLifecycle on AppsProvider {
     } catch (_) {
       if (newUserIcon.existsSync() && !previousUserIcon.existsSync()) {
         newUserIcon.renameSync(previousUserIcon.path);
+      }
+      if (newDeducedIcon.existsSync() && !previousDeducedIcon.existsSync()) {
+        newDeducedIcon.renameSync(previousDeducedIcon.path);
       }
       rethrow;
     }
@@ -1526,6 +1625,10 @@ extension AppsProviderLifecycle on AppsProvider {
         final File standardIconCache = File('${iconsCacheDir.path}/$appId.png');
         if (standardIconCache.existsSync()) {
           deleteFile(standardIconCache);
+        }
+        final File deducedIconStored = _deducedAppIconPngFile(appId);
+        if (deducedIconStored.existsSync()) {
+          deleteFile(deducedIconStored);
         }
         final File userIconStored = _userAppIconPngFile(appId);
         if (userIconStored.existsSync()) {

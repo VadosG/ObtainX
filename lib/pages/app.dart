@@ -36,6 +36,7 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/store_source_icons.dart';
 import 'package:obtainium/services/bulk_import_service.dart';
 import 'package:obtainium/services/bulk_scan_cache.dart';
+import 'package:obtainium/services/store_icon_resolver.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
@@ -1904,18 +1905,28 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
   /// After a pull-to-refresh, checks all 4 stores (APKMirror, F-Droid, APKPure,
   /// Play Store) for this single app concurrently. Cached stores are skipped,
   /// except that APKMirror is rechecked when its existing availability response
-  /// can also fill a missing app icon. Caches results and triggers a
-  /// FutureBuilder rebuild so the Other Sources row updates in place.
+  /// can also fill a missing app icon. Presence always runs for every store
+  /// that is still uncached. Icon resolution is separate: APKMirror API icon
+  /// first, then listing-page icons APKMirror -> F-Droid -> APKPure -> Play
+  /// Store, stopping at the first hit - and skipped entirely for installed apps
+  /// or when an icon was already extracted from a downloaded APK. Caches results
+  /// and triggers a FutureBuilder rebuild so the Other Sources row updates in
+  /// place.
   Future<void> _maybeCheckAndCacheAllStores(String appId) async {
     if (appId.isEmpty || !mounted) return;
 
     final appsProvider = Provider.of<AppsProvider>(context, listen: false);
     final AppInMemory? appBeforeStoreCheck = appsProvider.apps[appId];
     final trackedUrl = appBeforeStoreCheck?.app.url;
+    // No icon to hunt for when the device already supplies one (app is
+    // installed), or when one was deduced from a downloaded APK and stored
+    // permanently - that one is authoritative and needs no improving on.
     final shouldResolveMissingIcon =
         appBeforeStoreCheck != null &&
         appBeforeStoreCheck.icon == null &&
-        appBeforeStoreCheck.app.iconUrl?.isNotEmpty != true;
+        appBeforeStoreCheck.installedInfo == null &&
+        appBeforeStoreCheck.app.iconUrl?.isNotEmpty != true &&
+        !appsProvider.hasDeducedAppIcon(appId);
 
     final cache = await BulkScanCache.load();
     final storeData = cache[appId] ?? {};
@@ -1957,27 +1968,37 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
       );
     }
 
-    if (futures.isEmpty) return;
-
-    final results = await Future.wait(futures);
-
     final entry = cache.putIfAbsent(appId, () => {});
-    for (final result in results) {
-      if (result.value != null || (entry[result.key] ?? '').isEmpty) {
-        entry[result.key] = result.value ?? '';
+    if (futures.isNotEmpty) {
+      final results = await Future.wait(futures);
+      for (final result in results) {
+        if (result.value != null || (entry[result.key] ?? '').isEmpty) {
+          entry[result.key] = result.value ?? '';
+        }
       }
+      await BulkScanCache.save(cache);
+    } else if (!shouldResolveMissingIcon) {
+      return;
     }
-    await BulkScanCache.save(cache);
 
-    final String? apkMirrorIconUrl = apkMirrorIconUrls[appId];
+    String? resolvedIconUrl;
+    if (shouldResolveMissingIcon) {
+      resolvedIconUrl = await resolveIconUrlFromOtherStores(
+        apkMirrorIconUrl: apkMirrorIconUrls[appId],
+        apkMirrorListingUrl: entry['APKMirror'],
+        fdroidListingUrl: entry['F-Droid'],
+        apkPureListingUrl: entry['APKPure'],
+        playStoreListingUrl: entry['PlayStore'],
+      );
+    }
     final AppInMemory? currentApp = appsProvider.apps[appId];
-    if (apkMirrorIconUrl != null &&
+    if (resolvedIconUrl != null &&
         currentApp != null &&
         currentApp.icon == null &&
         currentApp.app.iconUrl?.isNotEmpty != true &&
         currentApp.app.url == trackedUrl) {
       await appsProvider.saveApps([
-        currentApp.app.copyWith(iconUrl: apkMirrorIconUrl),
+        currentApp.app.copyWith(iconUrl: resolvedIconUrl),
       ], updateInstalledInfo: false);
       await appsProvider.updateAppIcon(appId);
     }

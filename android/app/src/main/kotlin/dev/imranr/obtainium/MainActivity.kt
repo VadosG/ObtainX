@@ -412,6 +412,17 @@ class MainActivity : FlutterActivity() {
                         mainHandler.post { result.success(bytes) }
                     }
                 }
+                "getApkArchiveIcon" -> {
+                    val archiveFilePath = call.argument<String>("archiveFilePath")
+                    if (archiveFilePath == null) {
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
+                    deviceAppsExecutor.execute {
+                        val bytes = getApkArchiveIconBytes(archiveFilePath)
+                        mainHandler.post { result.success(bytes) }
+                    }
+                }
                 "getSystemFontFiles" -> {
                     // Every weight/style file of the device's default font
                     // family, so the app can register the whole family (real
@@ -931,6 +942,38 @@ class MainActivity : FlutterActivity() {
                 packageManager.getApplicationInfo(packageName, 0)
             }
             val drawable = packageManager.getApplicationIcon(appInfo)
+            val bitmap = drawableToBitmap(drawable)
+            ByteArrayOutputStream().use { stream ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                stream.toByteArray()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /// Renders the launcher icon of an APK file that is not installed, so an app
+    /// whose source publishes no icon can still show one.
+    ///
+    /// getPackageArchiveInfo leaves sourceDir/publicSourceDir unset, and loadIcon
+    /// resolves the icon resource through those paths: without them the loader
+    /// has no archive to read from and falls back to the default icon. Pointing
+    /// both at the APK makes it read the resource out of the archive itself.
+    private fun getApkArchiveIconBytes(archiveFilePath: String): ByteArray? {
+        return try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageArchiveInfo(
+                    archiveFilePath,
+                    PackageManager.PackageInfoFlags.of(0),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageArchiveInfo(archiveFilePath, 0)
+            } ?: return null
+            val appInfo = packageInfo.applicationInfo ?: return null
+            appInfo.sourceDir = archiveFilePath
+            appInfo.publicSourceDir = archiveFilePath
+            val drawable = appInfo.loadIcon(packageManager)
             val bitmap = drawableToBitmap(drawable)
             ByteArrayOutputStream().use { stream ->
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)

@@ -1106,6 +1106,7 @@ class AppsProvider with ChangeNotifier {
   Directory? _apkDir;
   Directory? _iconsCacheDir;
   Directory? _userAppIconsDir;
+  Directory? _deducedAppIconsDir;
   Directory? cachedAppsDir;
 
   // Per-app-detail-page transient error banners, keyed by app ID. Populated by
@@ -1153,6 +1154,19 @@ class AppsProvider with ChangeNotifier {
       );
     }
     return _userAppIconsDir!;
+  }
+
+  /// Icons deduced for apps whose source publishes none: extracted from a
+  /// downloaded APK, or fetched from another store's listing. Lives under app
+  /// storage (not [iconsCacheDir]) because re-deriving one costs a download or
+  /// a network round-trip, so Android "clear cache" must not wipe it.
+  Directory get deducedAppIconsDir {
+    if (_deducedAppIconsDir == null) {
+      throw StateError(
+        'deducedAppIconsDir not initialized - wait for async init to complete',
+      );
+    }
+    return _deducedAppIconsDir!;
   }
 
   /// Count of installed apps with an actionable or attention-needed update.
@@ -1328,6 +1342,12 @@ class AppsProvider with ChangeNotifier {
       );
       if (!_userAppIconsDir!.existsSync()) {
         _userAppIconsDir!.createSync(recursive: true);
+      }
+      _deducedAppIconsDir = Directory(
+        '${(await getAppStorageDir()).path}/deduced_icons',
+      );
+      if (!_deducedAppIconsDir!.existsSync()) {
+        _deducedAppIconsDir!.createSync(recursive: true);
       }
       if (!isBg) {
         await loadApps();
@@ -1898,6 +1918,23 @@ class NativeFeatures {
       // Notification actions remain best-effort on older native runners.
     } on MissingPluginException {
       // Non-Android builds and older native runners do not expose this method.
+    }
+  }
+
+  /// Launcher icon of a downloaded, not-yet-installed APK, as PNG bytes.
+  ///
+  /// Rendered natively from the archive (adaptive icons composited, size-capped)
+  /// so an app from a source that publishes no icon still gets one.
+  static Future<Uint8List?> getApkArchiveIcon(String archiveFilePath) async {
+    try {
+      return await _deviceAppsChannel.invokeMethod<Uint8List>(
+        'getApkArchiveIcon',
+        {'archiveFilePath': archiveFilePath},
+      );
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
     }
   }
 
