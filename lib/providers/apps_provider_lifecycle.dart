@@ -665,8 +665,8 @@ extension AppsProviderLifecycle on AppsProvider {
                 // A later install must not keep showing an APK-extracted or
                 // store-fetched icon. Clearing here lets [updateAppIcon] load
                 // the device launcher icon instead of early-returning.
-                final Uint8List? icon = installedInfo != null &&
-                        before?.installedInfo == null
+                final Uint8List? icon =
+                    installedInfo != null && before?.installedInfo == null
                     ? null
                     : before?.icon;
                 apps[app.id] = AppInMemory(
@@ -869,6 +869,12 @@ extension AppsProviderLifecycle on AppsProvider {
         try {
           await entity.copy(destination.path);
           await entity.delete();
+          unawaited(
+            mirrorIconToIconsDir(
+              fileName.substring(0, fileName.length - '.user.png'.length),
+              isUserIcon: true,
+            ),
+          );
         } catch (e) {
           unawaited(logs.add('User icon migrate $fileName: $e'));
         }
@@ -981,6 +987,7 @@ extension AppsProviderLifecycle on AppsProvider {
       }
       final Uint8List icon = await _resizeIconForStorage(archiveIcon);
       await _deducedAppIconPngFile(appId).writeAsBytes(icon);
+      unawaited(mirrorIconToIconsDir(appId, isUserIcon: false));
       if (apps.containsKey(appId) &&
           apps[appId]!.installedInfo == null &&
           !_userAppIconPngFile(appId).existsSync()) {
@@ -1061,6 +1068,7 @@ extension AppsProviderLifecycle on AppsProvider {
         if (fetchedIcon != null) {
           icon = await _resizeIconForStorage(fetchedIcon);
           await deducedIcon.writeAsBytes(icon);
+          unawaited(mirrorIconToIconsDir(appId, isUserIcon: false));
         }
       }
     }
@@ -1145,6 +1153,7 @@ extension AppsProviderLifecycle on AppsProvider {
       await dest.writeAsBytes(bytes);
       apps.update(appId, (value) => value.copyWith(icon: bytes));
       notify();
+      unawaited(mirrorIconToIconsDir(appId, isUserIcon: true));
       return null;
     } catch (e) {
       unawaited(logs.add('applyUserAppIconPngBytes: $e'));
@@ -1176,6 +1185,7 @@ extension AppsProviderLifecycle on AppsProvider {
     final File userFile = _userAppIconPngFile(appId);
     if (userFile.existsSync()) {
       deleteFile(userFile);
+      unawaited(removeMirroredIconFromIconsDir(appId, isUserIcon: true));
     }
     await updateAppIcon(appId, ignoreCache: true);
   }
@@ -1378,7 +1388,10 @@ extension AppsProviderLifecycle on AppsProvider {
         final cachedIcon = File('${iconsCacheDir.path}/$appId.png');
         if (cachedIcon.existsSync()) cachedIcon.deleteSync();
         final File deducedIcon = _deducedAppIconPngFile(appId);
-        if (deducedIcon.existsSync()) deducedIcon.deleteSync();
+        if (deducedIcon.existsSync()) {
+          deducedIcon.deleteSync();
+          unawaited(removeMirroredIconFromIconsDir(appId, isUserIcon: false));
+        }
         if (apps.containsKey(appId)) {
           apps.remove(appId);
         }
@@ -1447,6 +1460,19 @@ extension AppsProviderLifecycle on AppsProvider {
         newDeducedIcon.renameSync(previousDeducedIcon.path);
       }
       rethrow;
+    }
+
+    unawaited(
+      removeMirroredIconFromIconsDir(previousPackageId, isUserIcon: true),
+    );
+    unawaited(
+      removeMirroredIconFromIconsDir(previousPackageId, isUserIcon: false),
+    );
+    if (newUserIcon.existsSync()) {
+      unawaited(mirrorIconToIconsDir(newPackageId, isUserIcon: true));
+    }
+    if (newDeducedIcon.existsSync()) {
+      unawaited(mirrorIconToIconsDir(newPackageId, isUserIcon: false));
     }
 
     final AppInMemory? newEntry = apps[newPackageId];
@@ -1629,10 +1655,12 @@ extension AppsProviderLifecycle on AppsProvider {
         final File deducedIconStored = _deducedAppIconPngFile(appId);
         if (deducedIconStored.existsSync()) {
           deleteFile(deducedIconStored);
+          unawaited(removeMirroredIconFromIconsDir(appId, isUserIcon: false));
         }
         final File userIconStored = _userAppIconPngFile(appId);
         if (userIconStored.existsSync()) {
           deleteFile(userIconStored);
+          unawaited(removeMirroredIconFromIconsDir(appId, isUserIcon: true));
         }
         final File legacyUserIconInCache = File(
           '${iconsCacheDir.path}/$appId.user.png',

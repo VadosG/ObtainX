@@ -37,6 +37,7 @@ import 'package:obtainium/providers/apps_provider_install.dart';
 import 'package:obtainium/providers/apps_provider_lifecycle.dart';
 import 'package:obtainium/providers/apps_provider_updates.dart';
 
+export 'apps_provider_icon_backup.dart';
 export 'apps_provider_import_export.dart';
 export 'apps_provider_install.dart';
 export 'apps_provider_lifecycle.dart';

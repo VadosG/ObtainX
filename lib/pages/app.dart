@@ -2238,6 +2238,12 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
           context,
           listen: false,
         ).updateAppIcon(widget.appId, ignoreCache: false);
+        // updateAppIcon only falls back to an already-set App.iconUrl - it
+        // doesn't go looking for one. Without this, a freshly-added app whose
+        // source publishes no icon stays iconless until the user manually
+        // pulls to refresh (which is what actually resolves iconUrl via the
+        // other stores below).
+        unawaited(_maybeCheckAndCacheAllStores(widget.appId));
       });
     }
     if (widget.openInEditMode &&

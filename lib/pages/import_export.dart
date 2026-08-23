@@ -159,9 +159,29 @@ class _ImportExportPageState extends State<ImportExportPage> {
         }
       });
       appsProvider.addMissingCategories(settingsProvider);
-      showMessage(
-        '${tr('importedX', args: [plural('apps', importResult.key.length).toLowerCase()])}${importResult.value ? ' + ${tr('settings').toLowerCase()}' : ''}',
-      );
+      String resultMessage =
+          '${tr('importedX', args: [plural('apps', importResult.key.length).toLowerCase()])}${importResult.value ? ' + ${tr('settings').toLowerCase()}' : ''}';
+      // Settings restore is the only way `iconsDir` comes back, so only a
+      // just-restored settings block can possibly have reconnected it.
+      if (importResult.value) {
+        final Uri? savedIconsDir = await settingsProvider.getIconsDir(
+          requireAccess: false,
+        );
+        if (savedIconsDir != null) {
+          final Uri? accessibleIconsDir = await settingsProvider.getIconsDir();
+          if (accessibleIconsDir != null) {
+            final IconImportSweepResult sweep = await appsProvider
+                .importIconsFromIconsDir();
+            if (sweep.restoredTotal > 0) {
+              resultMessage +=
+                  '\n${tr('iconsRestoredFromFolder', args: ['${sweep.restoredTotal}'])}';
+            }
+          } else {
+            resultMessage += '\n${tr('iconsFolderRestoreHint')}';
+          }
+        }
+      }
+      showMessage(resultMessage);
     }
 
     Future<String?> pickBackupDataFromSystemPicker() async {
@@ -485,6 +505,117 @@ class _ImportExportPageState extends State<ImportExportPage> {
                           },
                         ),
                       ],
+                      importPageSectionTitle(
+                        tr('importExportCardAppIcons'),
+                        Icons.image_rounded,
+                      ),
+                      FutureBuilder<List<Uri?>>(
+                        future: Future.wait<Uri?>([
+                          settingsProvider.getIconsDir(requireAccess: false),
+                          settingsProvider.getIconsDir(),
+                        ]),
+                        builder: (context, iconsDirSnapshot) {
+                          final Uri? savedIconsUri = iconsDirSnapshot.data?[0];
+                          final Uri? accessibleIconsUri =
+                              iconsDirSnapshot.data?[1];
+                          final bool iconsDirInaccessible =
+                              savedIconsUri != null &&
+                              accessibleIconsUri == null;
+                          final Color iconsFolderDescriptionColor =
+                              iconsDirInaccessible
+                              ? impScheme.error
+                              : impScheme.onSurfaceVariant;
+                          return importPageCard([
+                            resettableImportPageRow(
+                              onReset: importInProgress || savedIconsUri == null
+                                  ? null
+                                  : () async {
+                                      await settingsProvider.pickIconsDir(
+                                        remove: true,
+                                      );
+                                      if (context.mounted) {
+                                        setState(() {});
+                                      }
+                                    },
+                              child: Padding(
+                                padding: importPageCardFolderRowPadding,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            savedIconsUri == null
+                                                ? tr('pickIconsDir')
+                                                : folderDisplayPathFromTreeUri(
+                                                    savedIconsUri,
+                                                  ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleSmall
+                                                ?.copyWith(
+                                                  color: iconsDirInaccessible
+                                                      ? impScheme.error
+                                                      : null,
+                                                ),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            tr(
+                                              iconsDirInaccessible
+                                                  ? 'storagePermissionDenied'
+                                                  : 'appIconsFolderDescription',
+                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color:
+                                                      iconsFolderDescriptionColor,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    folderOutlineIconButton(
+                                      tooltipMessage: tr('pickIconsDir'),
+                                      onPressed: importInProgress
+                                          ? null
+                                          : () async {
+                                              await settingsProvider
+                                                  .pickIconsDir();
+                                              if (!context.mounted) return;
+                                              final IconImportSweepResult
+                                              sweep = await appsProvider
+                                                  .importIconsFromIconsDir();
+                                              if (context.mounted) {
+                                                setState(() {});
+                                              }
+                                              if (sweep.restoredTotal > 0) {
+                                                showMessage(
+                                                  tr(
+                                                    'iconsRestoredFromFolder',
+                                                    args: [
+                                                      '${sweep.restoredTotal}',
+                                                    ],
+                                                  ),
+                                                );
+                                              }
+                                            },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ]);
+                        },
+                      ),
                       importPageSectionTitle(
                         tr('importExportCardObtainxBackup'),
                         Icons.save_as_rounded,

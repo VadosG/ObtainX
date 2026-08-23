@@ -457,6 +457,7 @@ const Set<String> obtainXOnlySettingKeys = {
   'showVersionBadge',
   'saveDownloadedApkCopies',
   'apkSaveDir',
+  'iconsDir',
   'rightSwipeAction',
   'leftSwipeAction',
   'rightSwipeActionName',

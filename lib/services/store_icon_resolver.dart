@@ -85,9 +85,7 @@ Future<String?> resolveIconUrlFromOtherStores({
     if (trimmedListingUrl == null || trimmedListingUrl.isEmpty) {
       continue;
     }
-    final String? listingIconUrl = await fetchListingIconUrl(
-      trimmedListingUrl,
-    );
+    final String? listingIconUrl = await fetchListingIconUrl(trimmedListingUrl);
     if (listingIconUrl != null && listingIconUrl.trim().isNotEmpty) {
       return listingIconUrl.trim();
     }

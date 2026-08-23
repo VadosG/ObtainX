@@ -50,46 +50,52 @@ void main() {
   });
 
   group('resolveIconUrlFromOtherStores', () {
-    test('returns the APKMirror API icon without fetching listing pages', () async {
-      final List<String> fetchedUrls = <String>[];
-      final String? iconUrl = await resolveIconUrlFromOtherStores(
-        apkMirrorIconUrl: ' https://www.apkmirror.com/icon.png ',
-        apkMirrorListingUrl: 'https://www.apkmirror.com/apk/example/',
-        fdroidListingUrl: 'https://f-droid.org/packages/org.example.app/',
-        fetchListingIconUrl: (String listingUrl) async {
-          fetchedUrls.add(listingUrl);
-          return 'https://should-not-be-used.png';
-        },
-      );
-      expect(iconUrl, 'https://www.apkmirror.com/icon.png');
-      expect(fetchedUrls, isEmpty);
-    });
+    test(
+      'returns the APKMirror API icon without fetching listing pages',
+      () async {
+        final List<String> fetchedUrls = <String>[];
+        final String? iconUrl = await resolveIconUrlFromOtherStores(
+          apkMirrorIconUrl: ' https://www.apkmirror.com/icon.png ',
+          apkMirrorListingUrl: 'https://www.apkmirror.com/apk/example/',
+          fdroidListingUrl: 'https://f-droid.org/packages/org.example.app/',
+          fetchListingIconUrl: (String listingUrl) async {
+            fetchedUrls.add(listingUrl);
+            return 'https://should-not-be-used.png';
+          },
+        );
+        expect(iconUrl, 'https://www.apkmirror.com/icon.png');
+        expect(fetchedUrls, isEmpty);
+      },
+    );
 
-    test('walks listing pages in preference order and stops at the first icon', () async {
-      final List<String> fetchedUrls = <String>[];
-      final String? iconUrl = await resolveIconUrlFromOtherStores(
-        apkMirrorListingUrl: 'https://www.apkmirror.com/apk/example/',
-        fdroidListingUrl: 'https://f-droid.org/packages/org.example.app/',
-        apkPureListingUrl: 'https://apkpure.net/example/org.example.app',
-        playStoreListingUrl:
-            'https://play.google.com/store/apps/details?id=org.example.app',
-        fetchListingIconUrl: (String listingUrl) async {
-          fetchedUrls.add(listingUrl);
-          if (listingUrl.contains('f-droid.org')) {
-            return 'https://f-droid.org/repo/icons-640/org.example.app.png';
-          }
-          return null;
-        },
-      );
-      expect(
-        iconUrl,
-        'https://f-droid.org/repo/icons-640/org.example.app.png',
-      );
-      expect(fetchedUrls, <String>[
-        'https://www.apkmirror.com/apk/example/',
-        'https://f-droid.org/packages/org.example.app/',
-      ]);
-    });
+    test(
+      'walks listing pages in preference order and stops at the first icon',
+      () async {
+        final List<String> fetchedUrls = <String>[];
+        final String? iconUrl = await resolveIconUrlFromOtherStores(
+          apkMirrorListingUrl: 'https://www.apkmirror.com/apk/example/',
+          fdroidListingUrl: 'https://f-droid.org/packages/org.example.app/',
+          apkPureListingUrl: 'https://apkpure.net/example/org.example.app',
+          playStoreListingUrl:
+              'https://play.google.com/store/apps/details?id=org.example.app',
+          fetchListingIconUrl: (String listingUrl) async {
+            fetchedUrls.add(listingUrl);
+            if (listingUrl.contains('f-droid.org')) {
+              return 'https://f-droid.org/repo/icons-640/org.example.app.png';
+            }
+            return null;
+          },
+        );
+        expect(
+          iconUrl,
+          'https://f-droid.org/repo/icons-640/org.example.app.png',
+        );
+        expect(fetchedUrls, <String>[
+          'https://www.apkmirror.com/apk/example/',
+          'https://f-droid.org/packages/org.example.app/',
+        ]);
+      },
+    );
 
     test('skips blank listing URLs', () async {
       final List<String> fetchedUrls = <String>[];
