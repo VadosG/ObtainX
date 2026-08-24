@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
 
@@ -43,6 +44,23 @@ extension AppsProviderIconBackup on AppsProvider {
     return File(
       '${dir.path}/${_mirroredIconDisplayName(appId, isUserIcon: isUserIcon)}',
     );
+  }
+
+  /// Whether [bytes] are identical to the icon already stored locally for
+  /// [appId], so a restore sweep can skip re-writing (and, more importantly,
+  /// skip *counting*) a file that would not actually change anything.
+  Future<bool> _iconBytesUnchanged(
+    String appId,
+    Uint8List bytes, {
+    required bool isUserIcon,
+  }) async {
+    final File localFile = _localIconFile(appId, isUserIcon: isUserIcon);
+    if (!localFile.existsSync()) return false;
+    try {
+      return listEquals(await localFile.readAsBytes(), bytes);
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _deleteMirroredDoc(Uri treeUri, String displayName) async {
@@ -115,6 +133,47 @@ extension AppsProviderIconBackup on AppsProvider {
     return true;
   }
 
+  /// Pushes every icon file currently on disk (user overrides and deduced
+  /// icons) out to the configured icons folder, regardless of whether each one
+  /// has changed since it was last mirrored. For backfilling a folder picked
+  /// after icons already existed - [mirrorIconToIconsDir] only fires on new
+  /// writes going forward, so it never catches up on its own.
+  Future<int> exportAllIconsToIconsDir() async {
+    final Uri? treeUri = await settingsProvider.getIconsDir();
+    if (treeUri == null) return 0;
+
+    int exported = 0;
+    for (final bool isUserIcon in [true, false]) {
+      final Directory dir = isUserIcon ? userAppIconsDir : deducedAppIconsDir;
+      if (!dir.existsSync()) continue;
+      final String suffix = isUserIcon ? '.user.png' : '.png';
+      for (final FileSystemEntity entity in dir.listSync()) {
+        if (entity is! File) continue;
+        final String fileName = entity.uri.pathSegments.last;
+        // ".png" also matches ".user.png"; skip those on the deduced pass so
+        // each file is exported exactly once.
+        if (!fileName.endsWith(suffix) ||
+            (!isUserIcon && fileName.endsWith('.user.png'))) {
+          continue;
+        }
+        try {
+          final Uint8List bytes = await entity.readAsBytes();
+          await _deleteMirroredDoc(treeUri, fileName);
+          await saf.createFile(
+            treeUri,
+            mimeType: 'image/png',
+            displayName: fileName,
+            bytes: bytes,
+          );
+          exported++;
+        } catch (e) {
+          unawaited(logs.add('Icon export failed for $fileName: $e'));
+        }
+      }
+    }
+    return exported;
+  }
+
   /// One-time sweep: reads icon files back out of the configured icons folder
   /// into private storage, for every currently-tracked app that has a matching
   /// file there. Intended to run once, right after the folder is (re)selected
@@ -156,6 +215,11 @@ extension AppsProviderIconBackup on AppsProvider {
           final Uint8List? bytes = await saf.getDocumentContent(entry.uri);
           if (bytes == null) {
             skipped++;
+            continue;
+          }
+          if (await _iconBytesUnchanged(appId, bytes, isUserIcon: isUserIcon)) {
+            // Already up to date (e.g. this is the same file a prior sweep or
+            // an export just wrote) - not a restore, so don't count it as one.
             continue;
           }
           if (isUserIcon) {

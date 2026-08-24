@@ -584,20 +584,20 @@ class _BackupImportSheetState extends State<BackupImportSheet> {
                       setState(() => _isConfirmingRestore = true);
                       final bool confirmed =
                           (await showDialog<Map<String, dynamic>?>(
-                                context: context,
-                                builder: (BuildContext dialogContext) {
-                                  return GeneratedFormModal(
-                                    title: tr('restoreBackupConfirmTitle'),
-                                    items: const [],
-                                    initValid: true,
-                                    message: tr('restoreBackupConfirmBody'),
-                                    primaryActionColour: Theme.of(
-                                      dialogContext,
-                                    ).colorScheme.error,
-                                  );
-                                },
-                              )) !=
-                              null;
+                            context: context,
+                            builder: (BuildContext dialogContext) {
+                              return GeneratedFormModal(
+                                title: tr('restoreBackupConfirmTitle'),
+                                items: const [],
+                                initValid: true,
+                                message: tr('restoreBackupConfirmBody'),
+                                primaryActionColour: Theme.of(
+                                  dialogContext,
+                                ).colorScheme.error,
+                              );
+                            },
+                          )) !=
+                          null;
                       if (!mounted) return;
                       setState(() => _isConfirmingRestore = false);
                       if (!confirmed) return;

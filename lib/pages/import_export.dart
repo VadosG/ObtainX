@@ -648,6 +648,68 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                 ),
                               ),
                             ),
+                            Padding(
+                              padding: importPageCardRowPadding,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextButton(
+                                      style: outlineButtonStyle,
+                                      onPressed:
+                                          importInProgress ||
+                                              savedIconsUri == null ||
+                                              iconsDirInaccessible
+                                          ? null
+                                          : () async {
+                                              final IconImportSweepResult
+                                              sweep = await appsProvider
+                                                  .importIconsFromIconsDir();
+                                              if (!context.mounted) return;
+                                              showMessage(
+                                                sweep.restoredTotal > 0
+                                                    ? tr(
+                                                        'iconsRestoredFromFolder',
+                                                        args: [
+                                                          '${sweep.restoredTotal}',
+                                                        ],
+                                                      )
+                                                    : tr('iconsNoneToRestore'),
+                                              );
+                                            },
+                                      child: Text(tr('obtainiumImport')),
+                                    ),
+                                  ),
+                                  const SizedBox(
+                                    width: importPageCardRowItemGap,
+                                  ),
+                                  Expanded(
+                                    child: TextButton(
+                                      style: outlineButtonStyle,
+                                      onPressed:
+                                          importInProgress ||
+                                              savedIconsUri == null ||
+                                              iconsDirInaccessible
+                                          ? null
+                                          : () async {
+                                              final int
+                                              exported = await appsProvider
+                                                  .exportAllIconsToIconsDir();
+                                              if (!context.mounted) return;
+                                              showMessage(
+                                                exported > 0
+                                                    ? tr(
+                                                        'iconsExportedToFolder',
+                                                        args: ['$exported'],
+                                                      )
+                                                    : tr('iconsNoneToExport'),
+                                              );
+                                            },
+                                      child: Text(tr('obtainiumExport')),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ]);
                         },
                       ),
@@ -856,14 +918,12 @@ class _ImportExportPageState extends State<ImportExportPage> {
                               padding: importPageCardRowPadding,
                               child: (() {
                                 final bool restoreEnabled = !importInProgress;
-                                final Color restoreForeground =
-                                    restoreEnabled
+                                final Color restoreForeground = restoreEnabled
                                     ? impScheme.error
                                     : impScheme.onSurface.withValues(
                                         alpha: 0.38,
                                       );
-                                final Color restoreBorderColor =
-                                    restoreEnabled
+                                final Color restoreBorderColor = restoreEnabled
                                     ? impScheme.error.withValues(alpha: 0.45)
                                     : impScheme.onSurface.withValues(
                                         alpha: 0.12,
@@ -892,10 +952,9 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                               ? runObtainiumRestore
                                               : null,
                                           child: Padding(
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                  vertical: 6,
-                                                ),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 6,
+                                            ),
                                             child: Center(
                                               child: Padding(
                                                 padding:
@@ -907,8 +966,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                                   textAlign: TextAlign.center,
                                                   style: TextStyle(
                                                     color: restoreForeground,
-                                                    fontWeight:
-                                                        FontWeight.w600,
+                                                    fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
                                               ),
@@ -924,8 +982,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                                   text:
                                                       '${tr('restoreBackupHelpTitle')}\n',
                                                   style: const TextStyle(
-                                                    fontWeight:
-                                                        FontWeight.bold,
+                                                    fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
                                                 TextSpan(
