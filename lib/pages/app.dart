@@ -184,6 +184,11 @@ String? _resolveStoreUrl({
   }
   final entry = storeData[storeName]!;
   if (entry.isEmpty) return null; // confirmed absent (empty string sentinel)
+  if (storeName == 'APKPure' && !isWellFormedApkPureUrl(entry)) {
+    // Known-broken shape from a past bug - don't surface a link we know
+    // 404s just because it's sitting in the cache.
+    return null;
+  }
   return entry; // confirmed present
 }
 
@@ -1951,8 +1956,10 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
         ]).then((result) => MapEntry('F-Droid', result[appId])),
       );
     }
+    final String cachedApkPureUrl = storeData['APKPure'] ?? '';
     if (!_trackedUrlIsFromHost(trackedUrl, 'apkpure.') &&
-        (storeData['APKPure'] ?? '').isEmpty) {
+        (cachedApkPureUrl.isEmpty ||
+            !isWellFormedApkPureUrl(cachedApkPureUrl))) {
       futures.add(
         BulkImportService.checkApkPure([
           appId,
@@ -1972,7 +1979,15 @@ class _AppPageState extends State<AppPage> with WidgetsBindingObserver {
     if (futures.isNotEmpty) {
       final results = await Future.wait(futures);
       for (final result in results) {
-        if (result.value != null || (entry[result.key] ?? '').isEmpty) {
+        final String existing = entry[result.key] ?? '';
+        // A malformed cached APKPure entry is never usable - a fresh "not
+        // found" (null) result must be allowed to overwrite it with the
+        // empty-string sentinel, not just a fresh URL. Every other store's
+        // cached value is trusted as-is once non-empty.
+        final bool existingIsUsable = result.key == 'APKPure'
+            ? existing.isNotEmpty && isWellFormedApkPureUrl(existing)
+            : existing.isNotEmpty;
+        if (result.value != null || !existingIsUsable) {
           entry[result.key] = result.value ?? '';
         }
       }

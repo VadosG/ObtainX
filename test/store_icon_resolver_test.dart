@@ -47,6 +47,74 @@ void main() {
         isNull,
       );
     });
+
+    test(
+      'reads the APKPure app icon, ignoring the screenshot og:image and the '
+      'site-logo img.icon',
+      () {
+        expect(
+          iconUrlFromStoreListingHtml('''
+<html><head>
+<meta property="og:image" content="https://image.winudf.com/v2/image1/screen-0.jpg" />
+</head><body>
+<img class="icon" src="https://image.winudf.com/v2/image/site-logo.png" alt="APKPure icon" />
+<div class="app-info"><span class="app-icon"><img alt="Example icon" src="https://image.winudf.com/v2/image1/app-icon.png?w=140" /></span></div>
+<img class="apk-unit-image app-icon lazy" src="data:image/gif;base64,x" data-original="https://image.winudf.com/v2/image1/other-app-icon.png" alt="Other App APK" />
+</body></html>
+''', 'https://apkpure.com/example/org.example.app'),
+          'https://image.winudf.com/v2/image1/app-icon.png?w=140',
+        );
+      },
+    );
+  });
+
+  group('normalizeApkPureHost', () {
+    test('rewrites apkpure.net to apkpure.com, keeping the path', () {
+      expect(
+        normalizeApkPureHost(
+          Uri.parse('https://apkpure.net/example/org.example.app'),
+        ).toString(),
+        'https://apkpure.com/example/org.example.app',
+      );
+    });
+
+    test('leaves apkpure.com and unrelated hosts unchanged', () {
+      expect(
+        normalizeApkPureHost(
+          Uri.parse('https://apkpure.com/example/org.example.app'),
+        ).toString(),
+        'https://apkpure.com/example/org.example.app',
+      );
+      expect(
+        normalizeApkPureHost(
+          Uri.parse('https://f-droid.org/packages/org.example.app/'),
+        ).toString(),
+        'https://f-droid.org/packages/org.example.app/',
+      );
+    });
+  });
+
+  group('isWellFormedApkPureUrl', () {
+    test('accepts the required <slug>/<package> shape', () {
+      expect(
+        isWellFormedApkPureUrl(
+          'https://apkpure.com/sealplus/com.maheshtechnicals.sealplus',
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects a slug-less single-segment URL (the empty-title bug)', () {
+      expect(
+        isWellFormedApkPureUrl('https://apkpure.com/com.xc3fff0e.xmanager'),
+        isFalse,
+      );
+    });
+
+    test('rejects garbage input', () {
+      expect(isWellFormedApkPureUrl(''), isFalse);
+      expect(isWellFormedApkPureUrl('not a url'), isFalse);
+    });
   });
 
   group('resolveIconUrlFromOtherStores', () {

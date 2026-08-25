@@ -134,8 +134,8 @@ extension AppsProviderIconBackup on AppsProvider {
   }
 
   /// Pushes every icon file currently on disk (user overrides and deduced
-  /// icons) out to the configured icons folder, regardless of whether each one
-  /// has changed since it was last mirrored. For backfilling a folder picked
+  /// icons) out to the configured icons folder, skipping any file that's
+  /// already there with identical bytes. For backfilling a folder picked
   /// after icons already existed - [mirrorIconToIconsDir] only fires on new
   /// writes going forward, so it never catches up on its own.
   Future<int> exportAllIconsToIconsDir() async {
@@ -158,7 +158,20 @@ extension AppsProviderIconBackup on AppsProvider {
         }
         try {
           final Uint8List bytes = await entity.readAsBytes();
-          await _deleteMirroredDoc(treeUri, fileName);
+          final saf.DocumentFile? existing = await saf.findFile(
+            treeUri,
+            fileName,
+          );
+          if (existing != null) {
+            final Uint8List? existingBytes = await saf.getDocumentContent(
+              existing.uri,
+            );
+            if (existingBytes != null && listEquals(existingBytes, bytes)) {
+              // Already up to date - not an export, so don't count it as one.
+              continue;
+            }
+            await saf.delete(existing.uri);
+          }
           await saf.createFile(
             treeUri,
             mimeType: 'image/png',

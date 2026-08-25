@@ -525,7 +525,7 @@
     "iconsRestoredFromFolder": "Restored {} app icon(s) from folder",
     "iconsNoneToRestore": "No new icons to restore from folder",
     "iconsExportedToFolder": "Exported {} app icon(s) to folder",
-    "iconsNoneToExport": "No icons to export",
+    "iconsNoneToExport": "No new icons to export",
     "iconsFolderRestoreHint": "This backup references an app icons folder. Reconnect it under \"App icons\" above to restore your icons.",
     "importExportIncludeInBackup": "Include in backup",
     "importExportBackupScopeOnlyApps": "Only Apps",
