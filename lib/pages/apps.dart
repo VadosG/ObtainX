@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
+import 'package:obtainium/app_sources/codeberg.dart';
 import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
@@ -127,13 +128,18 @@ String? sourceBadgeHostForApp(App app) {
   if (urlHost == null || urlHost.isEmpty) {
     return null;
   }
-  final String? declaredHost = SourceProvider()
+  final List<String> declaredHosts = SourceProvider()
       .getSourceTemplate(app.url, overrideSource: app.overrideSource)
-      .hosts
-      .firstOrNull;
-  return declaredHost != null && declaredHost.isNotEmpty
-      ? declaredHost
-      : urlHost;
+      .hosts;
+  if (declaredHosts.isEmpty) {
+    return urlHost;
+  }
+  for (final String declaredHost in declaredHosts) {
+    if (urlHost == declaredHost || urlHost == 'www.$declaredHost') {
+      return declaredHost;
+    }
+  }
+  return declaredHosts.first;
 }
 
 bool appIsTrackOnlyForFilter(App app) =>
@@ -1936,6 +1942,41 @@ Future<String?> _loadLinkedChangeLog(
   return response.body;
 }
 
+/// Turns a relative changelog image path into an absolute URL for the forge
+/// that published [appUrl]. Absolute http(s) URLs are returned unchanged.
+String resolveChangeLogImageSrc({
+  required String src,
+  required String appUrl,
+  required AppSource appSource,
+}) {
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    return src;
+  }
+  try {
+    final Uri uri = Uri.parse(appUrl);
+    final List<String> segments = uri.pathSegments;
+    String cleanPath = src;
+    if (cleanPath.startsWith('./')) {
+      cleanPath = cleanPath.substring(2);
+    } else if (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.substring(1);
+    }
+
+    if (uri.host.contains('github.com') && segments.length >= 2) {
+      return 'https://raw.githubusercontent.com/${segments[0]}/${segments[1]}/HEAD/$cleanPath';
+    }
+    if (uri.host.contains('gitlab.com') && segments.length >= 2) {
+      return 'https://gitlab.com/${segments[0]}/${segments[1]}/-/raw/HEAD/$cleanPath';
+    }
+    if (appSource is Codeberg && segments.length >= 2) {
+      return '${uri.origin}/${segments[0]}/${segments[1]}/raw/branch/HEAD/$cleanPath';
+    }
+    return '${uri.origin}/$cleanPath';
+  } catch (_) {
+    return src;
+  }
+}
+
 void showChangeLogDialog(
   BuildContext context,
   App app,
@@ -1957,33 +1998,11 @@ void showChangeLogDialog(
     final srcRegex = RegExp("src=[\"']([^\"']+)[\"']", caseSensitive: false);
     final altRegex = RegExp("alt=[\"']([^\"']+)[\"']", caseSensitive: false);
 
-    String resolveUrl(String src) {
-      if (src.startsWith('http://') || src.startsWith('https://')) {
-        return src;
-      }
-      try {
-        final uri = Uri.parse(app.url);
-        final segments = uri.pathSegments;
-        var cleanPath = src;
-        if (cleanPath.startsWith('./')) {
-          cleanPath = cleanPath.substring(2);
-        } else if (cleanPath.startsWith('/')) {
-          cleanPath = cleanPath.substring(1);
-        }
-
-        if (uri.host.contains('github.com') && segments.length >= 2) {
-          return 'https://raw.githubusercontent.com/${segments[0]}/${segments[1]}/HEAD/$cleanPath';
-        } else if (uri.host.contains('gitlab.com') && segments.length >= 2) {
-          return 'https://gitlab.com/${segments[0]}/${segments[1]}/-/raw/HEAD/$cleanPath';
-        } else if (uri.host.contains('codeberg.org') && segments.length >= 2) {
-          return 'https://codeberg.org/${segments[0]}/${segments[1]}/raw/branch/HEAD/$cleanPath';
-        } else {
-          return '${uri.origin}/$cleanPath';
-        }
-      } catch (_) {
-        return src;
-      }
-    }
+    String resolveUrl(String src) => resolveChangeLogImageSrc(
+      src: src,
+      appUrl: app.url,
+      appSource: appSource,
+    );
 
     processedChangeLog = processedChangeLog.replaceAllMapped(htmlImgRegex, (
       match,

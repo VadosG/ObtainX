@@ -42,9 +42,7 @@ String? iconUrlFromStoreListingDocument(Document doc, String pageUrl) {
   final Uri pageUri = Uri.parse(pageUrl);
   final String? raw = isApkPureHost(pageUri.host)
       ? doc.querySelector('span.app-icon img')?.attributes['src']
-      : doc
-                .querySelector('meta[property="og:image"]')
-                ?.attributes['content'] ??
+      : doc.querySelector('meta[property="og:image"]')?.attributes['content'] ??
             doc
                 .querySelector('meta[name="twitter:image"]')
                 ?.attributes['content'] ??

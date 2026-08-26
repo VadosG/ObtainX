@@ -238,9 +238,7 @@ class APKPure extends AppSource {
       // for a size that won't look blurry once scaled back up.
       if (resolved.queryParameters.containsKey('w')) {
         return resolved
-            .replace(
-              queryParameters: {...resolved.queryParameters, 'w': '200'},
-            )
+            .replace(queryParameters: {...resolved.queryParameters, 'w': '200'})
             .toString();
       }
       return resolved.toString();

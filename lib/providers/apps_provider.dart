@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/io_client.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/http/obtainx_user_agent.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
@@ -365,9 +366,7 @@ Future<DownloadResponseMetadata?> probeDownloadResponseMetadata(
 }) async {
   final Uri originalUri = Uri.parse(url);
   final Request request = Request('GET', originalUri);
-  if (headers != null) {
-    request.headers.addAll(headers);
-  }
+  request.headers.addAll(withDefaultObtainXUserAgent(headers));
   request.headers[HttpHeaders.rangeHeader] = 'bytes=0-0';
   final IOClient client = IOClient(createHttpClient(allowInsecure));
   try {
@@ -438,9 +437,7 @@ Future<String> checkPartialDownloadHash(
 }) async {
   final Uri originalUri = Uri.parse(url);
   final req = Request('GET', originalUri);
-  if (headers != null) {
-    req.headers.addAll(headers);
-  }
+  req.headers.addAll(withDefaultObtainXUserAgent(headers));
   req.headers[HttpHeaders.rangeHeader] = 'bytes=0-$bytesToGrab';
   final client = IOClient(createHttpClient(allowInsecure));
   try {
@@ -465,7 +462,7 @@ Future<String?> checkETagHeader(
   bool allowInsecure = false,
   void Function(DownloadResponseMetadata metadata)? onResponseMetadata,
 }) async {
-  final reqHeaders = headers ?? {};
+  final reqHeaders = withDefaultObtainXUserAgent(headers);
   final Uri originalUri = Uri.parse(url);
   final req = Request('GET', originalUri);
   req.headers.addAll(reqHeaders);
@@ -601,7 +598,7 @@ Future<File> _downloadFile(
   LogsProvider? logs,
   CancellationToken? cancellationToken,
 }) async {
-  final reqHeaders = headers ?? {};
+  final reqHeaders = withDefaultObtainXUserAgent(headers);
   final headersClient = IOClient(createHttpClient(allowInsecure));
 
   final getReq = Request('GET', Uri.parse(url));
@@ -878,7 +875,7 @@ Future<int?> getDownloadSize(
   Map<String, String>? headers,
   bool allowInsecure = false,
 }) async {
-  final reqHeaders = headers ?? {};
+  final reqHeaders = withDefaultObtainXUserAgent(headers);
   final client = IOClient(createHttpClient(allowInsecure));
   try {
     final getReq = Request('GET', Uri.parse(url));

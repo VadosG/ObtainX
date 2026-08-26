@@ -48,12 +48,10 @@ void main() {
       );
     });
 
-    test(
-      'reads the APKPure app icon, ignoring the screenshot og:image and the '
-      'site-logo img.icon',
-      () {
-        expect(
-          iconUrlFromStoreListingHtml('''
+    test('reads the APKPure app icon, ignoring the screenshot og:image and the '
+        'site-logo img.icon', () {
+      expect(
+        iconUrlFromStoreListingHtml('''
 <html><head>
 <meta property="og:image" content="https://image.winudf.com/v2/image1/screen-0.jpg" />
 </head><body>
@@ -62,10 +60,9 @@ void main() {
 <img class="apk-unit-image app-icon lazy" src="data:image/gif;base64,x" data-original="https://image.winudf.com/v2/image1/other-app-icon.png" alt="Other App APK" />
 </body></html>
 ''', 'https://apkpure.com/example/org.example.app'),
-          'https://image.winudf.com/v2/image1/app-icon.png?w=140',
-        );
-      },
-    );
+        'https://image.winudf.com/v2/image1/app-icon.png?w=140',
+      );
+    });
   });
 
   group('normalizeApkPureHost', () {

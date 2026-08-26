@@ -46,6 +46,15 @@ void main() {
       );
     });
 
+    test('uses the tracked host when a multi-host source matches it', () {
+      expect(
+        sourceBadgeHostForApp(
+          appWithUrl('https://codefloe.com/SnappTechnology/NextCloudTalkNext'),
+        ),
+        'codefloe.com',
+      );
+    });
+
     test('uses the overridden host when the source is overridden', () {
       expect(
         sourceBadgeHostForApp(
